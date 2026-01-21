@@ -245,7 +245,7 @@ set_ps1 () {
 #}
 
 centos_install_package() {
-    local packages="sudo vim curl jq lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git" # 示例包名，请替换为实际需要的包
+    local packages=("sudo" "vim" "curl" "tree" "net-tools" "wget" "jq" "iproute2" "ntpdate" "tcpdump" "telnet" "traceroute" "nfs-kernel-server" "nfs-common" "lrzsz" "tree" "openssl" "libssl-dev" "libpcre3" "libpcre3-dev" "zlib1g-dev" "gcc" "openssh-server" "iotop" "unzip" "zip" "bzip2" "htop" "git") # 示例包名，请替换为实际需要的包
     # 检查包管理器
     if command -v dnf &> /dev/null; then
         pm_cmd="dnf"
@@ -270,7 +270,7 @@ centos_install_package() {
 }
 # 定义Ubuntu安装函数（独立包检测）
 ubuntu_install_package() {
-    local packages="sudo vim curl tree net-tools wget jq iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git" # Ubuntu特有包
+    local packages=("sudo" "vim" "curl" "tree" "net-tools" "wget" "jq" "iproute2" "ntpdate" "tcpdump" "telnet" "traceroute" "nfs-kernel-server" "nfs-common" "lrzsz" "tree" "openssl" "libssl-dev" "libpcre3" "libpcre3-dev" "zlib1g-dev" "gcc" "openssh-server" "iotop" "unzip" "zip" "bzip2" "htop" "git") # Ubuntu特有包
     
     # 更新包列表
     sudo apt-get update
@@ -287,7 +287,7 @@ ubuntu_install_package() {
 }
 # 定义Debian安装函数（独立包检测）
 debian_install_package() {
-    local packages="sudo vim curl tree net-tools wget jq iputils-ping traceroute htop lshw inxi lm-sensors unzip zip bzip2 p7zip-full unrar-free git tcpdump traceroute iotop gcc" # Debian特有包
+    local packages=("sudo" "vim" "curl" "tree" "net-tools" "wget" "jq" "iputils-ping" "traceroute" "htop" "lshw" "inxi" "lm-sensors" "unzip" "zip" "bzip2" "p7zip-full" "unrar-free" "git" "tcpdump" "iotop" "gcc") # Debian特有包
     
     # 更新包列表
     sudo apt-get update
