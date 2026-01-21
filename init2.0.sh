@@ -399,7 +399,7 @@ Centos_neofetch(){
 	#rpm -q dnf dnf-plugins-core &> /dev/null || sudo yum install -y dnf-plugins-core dnf
 	#sudo dnf copr enable konimex/neofetch
     #sudo dnf install -y neofetch
-    rpm -q epel-release sudo &> /dev/null || sudo yum install epel-release sudo
+    rpm -q epel-release sudo unzip &> /dev/null || sudo yum install epel-release sudo unzip
     curl -o /etc/yum.repos.d/konimex-neofetch-epel-7.repo https://copr.fedorainfracloud.org/coprs/konimex/neofetch/repo/epel-7/konimex-neofetch-epel-7.repo
     sudo yum install -y neofetch
     rpm -q ruby rubygems &> /dev/null || sudo yum install -y ruby rubygems
@@ -418,7 +418,7 @@ Centos_neofetch(){
 
 Ubuntu_neofetch(){
     sudo apt-get update
-    sudo apt-get install -y neofetch sudo
+    sudo apt-get install -y neofetch sudo unzip
     sudo apt-get install -y ruby gem
     wget https://github.com/busyloop/lolcat/archive/master.zip
     unzip master.zip && cd  lolcat-master
@@ -435,7 +435,7 @@ Ubuntu_neofetch(){
 
 Debian_neofetch(){
     sudo apt-get update
-    sudo apt-get install -y neofetch sudo
+    sudo apt-get install -y neofetch sudo unzip
     sudo apt-get install -y ruby gem
     wget https://github.com/busyloop/lolcat/archive/master.zip
     unzip master.zip && cd  lolcat-master
