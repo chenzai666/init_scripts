@@ -363,7 +363,7 @@ case "$OS_ID" in
         exit 1
         ;;
 esac
-echo "安装过程已完成"
+#echo "安装过程已完成"
 }
 
 #yum install vim lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet wget ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel -y
