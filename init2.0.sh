@@ -246,27 +246,52 @@ apt install -y sudo vim curl tree net-tools wget jq ntpdata iputils-ping tracero
 
 
 minimal_install() {
-	OS_ID=$(grep -Eoi "^(ID=|DISTRIB_ID=)" /etc/*-release 2>/dev/null | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
-	# 兼容处理：如果未找到ID，尝试从发行版名称中提取
-	if [ -z "$OS_ID" ]; then
-    	OS_ID=$(grep -Eoi "^(NAME=|DISTRIB_DESCRIPTION=)" /etc/*-release 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
-    	OS_ID=$(echo "$OS_ID" | grep -Eoi "(centos|ubuntu|debian|rocky|almalinux|fedora)" | head -1)
-	fi
-	case "$OS_ID" in
-    	centos|rocky|almalinux|rhel|fedora)
-        	centos_install_package
-        	;;
-   	 	debian)
-        	debian_install_package
-        	;;
-    	ubuntu)
-        	ubuntu_install_package
-        	;;
-    	*)
-        	echo "Unsupported operating system: $OS_ID"
-        	exit 1
-        	;;
-	esac
+	if [ -f /etc/*-release ]; then
+    # 现代系统使用 /etc/os-release
+    OS_ID=$(grep -E '^ID=' /etc/*-release | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
+    
+    # 处理类似 "centos" 和 "rhel" 的情况
+    if [[ "$OS_ID" == "rhel" || "$OS_ID" == "rocky" || "$OS_ID" == "almalinux" ]]; then
+        OS_ID="centos"
+    fi
+	elif [ -f /etc/debian_version ]; then
+    	# 较旧的 Debian 系统
+    	OS_ID="debian"
+	elif [ -f /etc/centos-release ]; then
+    	# 较旧的 CentOS 系统
+    	OS_ID="centos"
+	elif [ -f /etc/redhat-release ]; then
+    	# RHEL 及其衍生系统
+    	if grep -qE "CentOS|Rocky|AlmaLinux" /etc/redhat-release; then
+        OS_ID="centos"
+    fi
+else
+    # 回退方法
+    OS_ID=$(cat /etc/*-release | head -1 | grep -Eoi "centos|ubuntu|debian" | head -1 | tr '[:upper:]' '[:lower:]')
+fi
+# 确保 OS_ID 是小写
+OS_ID=$(echo "$OS_ID" | tr '[:upper:]' '[:lower:]')
+# 调试输出（实际运行时可以注释掉）
+echo "检测到的系统: $OS_ID"
+# 根据系统类型执行安装
+case "$OS_ID" in
+    centos*)
+        echo "执行 CentOS/RHEL 系的安装"
+        centos_install_package
+        ;;
+    ubuntu)
+        echo "执行 Ubuntu 的安装"
+        ubuntu_install_package
+        ;;
+    debian)
+        echo "执行 Debian 的安装"
+        debian_install_package
+        ;;
+    *)
+        echo "错误：无法识别的操作系统" >&2
+        exit 1
+        ;;
+esac
 }
 
 #yum install vim lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet wget ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel -y
