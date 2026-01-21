@@ -230,23 +230,43 @@ set_ps1 () {
 }
 #安装常用软件
 centos_install_package() {
-package="sudo vim curl lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git"
+package="sudo vim curl jq lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git"
 for i in $package
 do
     rpm -q $i &>/dev/null || yum -q install -y $i
 done
 }
 ubuntu_install_package() {
-apt-get install -y sudo vim curl tree net-tools wget iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git
+apt-get install -y sudo vim curl tree net-tools wget jq iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git
 }
 
+debian_install_package() {
+apt install -y sudo vim curl tree net-tools wget jq ntpdata iputils-ping traceroute htop lshw inxi lm-sensors unzip zip bzip2 p7zip-full unrar-free git tcpdump traceroute iotop gcc
+}
+
+
 minimal_install() {
-	OS_ID=`cat /etc/*-release | head -1 | grep -Eoi "(centos|ubuntu)"`
-    if [ ${OS_ID} == "CentOS" ] &> /dev/null;then
-        centos_install_package
-    else
-        ubuntu_install_package
-    fi
+	OS_ID=$(grep -Eoi "^(ID=|DISTRIB_ID=)" /etc/*-release 2>/dev/null | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
+	# 兼容处理：如果未找到ID，尝试从发行版名称中提取
+	if [ -z "$OS_ID" ]; then
+    	OS_ID=$(grep -Eoi "^(NAME=|DISTRIB_DESCRIPTION=)" /etc/*-release 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
+    	OS_ID=$(echo "$OS_ID" | grep -Eoi "(centos|ubuntu|debian|rocky|almalinux|fedora)" | head -1)
+	fi
+	case "$OS_ID" in
+    	centos|rocky|almalinux|rhel|fedora)
+        	centos_install_package
+        	;;
+   	 	debian)
+        	debian_install_package
+        	;;
+    	ubuntu)
+        	ubuntu_install_package
+        	;;
+    	*)
+        	echo "Unsupported operating system: $OS_ID"
+        	exit 1
+        	;;
+	esac
 }
 
 #yum install vim lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet wget ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel -y
