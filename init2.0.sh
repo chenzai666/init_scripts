@@ -229,62 +229,133 @@ set_ps1 () {
     echo "命令提示符优化完毕,请重新登录"
 }
 #安装常用软件
-centos_install_package() {
-package="sudo vim curl jq lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git"
-for i in $package
-do
-    rpm -q $i &>/dev/null || yum -q install -y $i
-done
-}
-ubuntu_install_package() {
-apt-get install -y sudo vim curl tree net-tools wget jq iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git
-}
+#centos_install_package() {
+#package="sudo vim curl jq lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git"
+#for i in $package
+#do
+#    rpm -q $i &>/dev/null || yum -q install -y $i
+#done
+#}
+#ubuntu_install_package() {
+#apt-get install -y sudo vim curl tree net-tools wget jq iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git
+#}
 
+#debian_install_package() {
+#apt install -y sudo vim curl tree net-tools wget jq iputils-ping traceroute htop lshw inxi lm-sensors unzip zip bzip2 p7zip-full unrar-free git tcpdump traceroute iotop gcc
+#}
+
+centos_install_package() {
+    local packages="sudo vim curl jq lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel htop git" # 示例包名，请替换为实际需要的包
+    # 检查包管理器
+    if command -v dnf &> /dev/null; then
+        pm_cmd="dnf"
+    elif command -v yum &> /dev/null; then
+        pm_cmd="yum"
+    else
+        echo "错误：找不到包管理器（dnf/yum）" >&2
+        exit 1
+    fi
+    # 更新包缓存
+    sudo $pm_cmd makecache
+    
+    for pkg in "${packages[@]}"; do
+        # 检查包是否已安装
+        if rpm -q "$pkg" &> /dev/null; then
+            echo "[跳过] $pkg 已安装"
+        else
+            echo "[安装] $pkg..."
+            sudo $pm_cmd install -y "$pkg"
+        fi
+    done
+}
+# 定义Ubuntu安装函数（独立包检测）
+ubuntu_install_package() {
+    local packages="sudo vim curl tree net-tools wget jq iproute2 ntpdate tcpdump telnet traceroute nfs-kernel-server nfs-common lrzsz tree openssl libssl-dev libpcre3 libpcre3-dev zlib1g-dev gcc openssh-server iotop unzip zip bzip2 htop git" # Ubuntu特有包
+    
+    # 更新包列表
+    sudo apt-get update
+    
+    for pkg in "${packages[@]}"; do
+        # Ubuntu特有的包检测方式
+        if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
+            echo "[跳过] $pkg - Ubuntu包已安装"
+        else
+            echo "[安装] $pkg - Ubuntu..."
+            sudo apt-get install -y "$pkg"
+        fi
+    done
+}
+# 定义Debian安装函数（独立包检测）
 debian_install_package() {
-apt install -y sudo vim curl tree net-tools wget jq ntpdata iputils-ping traceroute htop lshw inxi lm-sensors unzip zip bzip2 p7zip-full unrar-free git tcpdump traceroute iotop gcc
+    local packages="sudo vim curl tree net-tools wget jq iputils-ping traceroute htop lshw inxi lm-sensors unzip zip bzip2 p7zip-full unrar-free git tcpdump traceroute iotop gcc" # Debian特有包
+    
+    # 更新包列表
+    sudo apt-get update
+    
+    for pkg in "${packages[@]}"; do
+        # Debian专用的包检测方式
+        if apt list --installed 2>/dev/null | grep -q "^$pkg/"; then
+            echo "[跳过] $pkg - Debian包已安装"
+        else
+            echo "[安装] $pkg - Debian..."
+            sudo apt-get install -y "$pkg"
+        fi
+    done
 }
 
 
 minimal_install() {
-	if [ -f /etc/*-release ]; then
-    # 现代系统使用 /etc/os-release
+	# 系统检测部分（优化版）
+if [ -f /etc/*-release ]; then
+    # 优先使用现代标准
     OS_ID=$(grep -E '^ID=' /etc/*-release | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
     
-    # 处理类似 "centos" 和 "rhel" 的情况
+    # 处理CentOS变体
     if [[ "$OS_ID" == "rhel" || "$OS_ID" == "rocky" || "$OS_ID" == "almalinux" ]]; then
         OS_ID="centos"
     fi
-	elif [ -f /etc/debian_version ]; then
-    	# 较旧的 Debian 系统
-    	OS_ID="debian"
-	elif [ -f /etc/centos-release ]; then
-    	# 较旧的 CentOS 系统
-    	OS_ID="centos"
-	elif [ -f /etc/redhat-release ]; then
-    	# RHEL 及其衍生系统
-    	if grep -qE "CentOS|Rocky|AlmaLinux" /etc/redhat-release; then
-        OS_ID="centos"
-    fi
-else
-    # 回退方法
-    OS_ID=$(cat /etc/*-release | head -1 | grep -Eoi "centos|ubuntu|debian" | head -1 | tr '[:upper:]' '[:lower:]')
 fi
-# 确保 OS_ID 是小写
+# 如果无法通过标准文件识别，使用回退方法
+if [ -z "$OS_ID" ]; then
+    # 回退方法：检查特定文件
+    if [ -f /etc/debian_version ]; then
+        if grep -q "ubuntu" /etc/issue 2>/dev/null; then
+            OS_ID="ubuntu"
+        else
+            OS_ID="debian"
+        fi
+    elif [ -f /etc/centos-release ]; then
+        OS_ID="centos"
+    elif [ -f /etc/redhat-release ]; then
+        OS_ID="centos"
+    else
+        # 最后尝试在所有*-release文件中搜索关键字
+        if grep -q -i 'centos' /etc/*-release 2>/dev/null || \
+           grep -q -i 'red hat' /etc/*-release 2>/dev/null || \
+           grep -q -i 'rocky' /etc/*-release 2>/dev/null || \
+           grep -q -i 'alma' /etc/*-release 2>/dev/null; then
+            OS_ID="centos"
+        elif grep -q -i 'ubuntu' /etc/*-release 2>/dev/null; then
+            OS_ID="ubuntu"
+        elif grep -q -i 'debian' /etc/*-release 2>/dev/null; then
+            OS_ID="debian"
+        else
+            OS_ID="unknown"
+        fi
+    fi
+fi
+# 确保OS_ID是小写
 OS_ID=$(echo "$OS_ID" | tr '[:upper:]' '[:lower:]')
-# 调试输出（实际运行时可以注释掉）
 echo "检测到的系统: $OS_ID"
 # 根据系统类型执行安装
 case "$OS_ID" in
     centos*)
-        echo "执行 CentOS/RHEL 系的安装"
         centos_install_package
         ;;
     ubuntu)
-        echo "执行 Ubuntu 的安装"
         ubuntu_install_package
         ;;
     debian)
-        echo "执行 Debian 的安装"
         debian_install_package
         ;;
     *)
@@ -292,6 +363,7 @@ case "$OS_ID" in
         exit 1
         ;;
 esac
+echo "安装过程已完成"
 }
 
 #yum install vim lrzsz tree tmux lsof tcpdump wget net-tools iotop bc bzip2 zip unzip nfs-utils man-pages dos2unix nc telnet wget ntpdate bash-completion bash-completion-extras gcc make autoconf gcc-c++ glibc glibc-devel pcre pcre-devel openssl openssl-devel systemd-devel zlib-devel -y
