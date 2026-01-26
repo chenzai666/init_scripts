@@ -273,7 +273,7 @@ ubuntu_install_package() {
     local packages=("sudo" "vim" "curl" "tree" "net-tools" "wget" "jq" "iproute2" "ntpdate" "tcpdump" "telnet" "traceroute" "nfs-kernel-server" "nfs-common" "lrzsz" "tree" "openssl" "libssl-dev" "libpcre3" "libpcre3-dev" "zlib1g-dev" "gcc" "openssh-server" "iotop" "unzip" "zip" "bzip2" "htop" "git") # Ubuntu特有包
     
     # 更新包列表
-    sudo apt-get update
+    apt-get update
     
     for pkg in "${packages[@]}"; do
         # Ubuntu特有的包检测方式
@@ -290,7 +290,7 @@ debian_install_package() {
     local packages=("sudo" "vim" "curl" "tree" "net-tools" "wget" "jq" "iputils-ping" "traceroute" "htop" "lshw" "inxi" "lm-sensors" "unzip" "zip" "bzip2" "p7zip-full" "unrar-free" "git" "tcpdump" "iotop" "gcc") # Debian特有包
     
     # 更新包列表
-    sudo apt-get update
+    apt-get update
     
     for pkg in "${packages[@]}"; do
         # Debian专用的包检测方式
