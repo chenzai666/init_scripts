@@ -1,5 +1,7 @@
 #!/bin/bash
-source /etc/init.d/functions
+set -euo pipefail
+
+#source /etc/init.d/functions
 blue(){
     echo -e "\033[34m\033[01m$1\033[0m"
 }
@@ -566,6 +568,123 @@ Debian_neofetch(){
 	fi
 }
 
+install_fastfetch(){
+# ===================== 配置项（可根据你的 GitHub 仓库修改） =====================
+# GitHub 上 Python 脚本的原始文件地址
+PY_SCRIPT_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/install_fastfetch.py"
+# 超时时间（秒）
+TIMEOUT=30
+# ==============================================================================
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # 重置颜色
+
+# 日志打印函数
+info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    exit 1
+}
+
+# 检查网络连通性
+check_network() {
+    info "检查网络连通性..."
+    if ! curl -s --connect-timeout 5 github.com > /dev/null; then
+        error "无法连接到 GitHub，请检查网络或代理设置"
+    fi
+}
+
+# 检查前置依赖（root 权限、python3、curl/wget）
+check_dependencies() {
+    # 检查 root 权限
+    if [ "$(id -u)" -ne 0 ]; then
+        error "请以 root 权限运行此脚本（sudo ./install_fastfetch.sh）"
+    fi
+
+    # 检查 Python3
+    if ! command -v python3 &> /dev/null; then
+        info "未检测到 Python3，正在自动安装..."
+        # 自动适配不同系统安装 Python3
+        if command -v apt &> /dev/null; then
+            apt update -y && apt install -y python3
+        elif command -v dnf &> /dev/null; then
+            dnf install -y python3
+        elif command -v yum &> /dev/null; then
+            yum install -y python3
+        elif command -v pacman &> /dev/null; then
+            pacman -S --noconfirm python
+        else
+            error "无法自动安装 Python3，请手动安装后重试"
+        fi
+    fi
+
+    # 检查 curl 或 wget（至少需要一个）
+    if ! command -v curl &> /dev/null && ! command -v wget &> /dev/null; then
+        info "未检测到 curl/wget，正在自动安装 curl..."
+        if command -v apt &> /dev/null; then
+            apt install -y curl
+        elif command -v dnf &> /dev/null; then
+            dnf install -y curl
+        elif command -v yum &> /dev/null; then
+            yum install -y curl
+        elif command -v pacman &> /dev/null; then
+            pacman -S --noconfirm curl
+        else
+            error "无法自动安装 curl，请手动安装后重试"
+        fi
+    fi
+}
+
+# 从 GitHub 拉取并执行 Python 脚本
+run_python_script() {
+    info "开始从 GitHub 拉取安装脚本: $PY_SCRIPT_URL"
+    
+    # 优先使用 curl，没有则用 wget
+    if command -v curl &> /dev/null; then
+        # 使用 curl 拉取并通过管道执行（添加超时、静默模式、失败重试）
+        if ! curl -sSL --max-time "$TIMEOUT" --retry 3 "$PY_SCRIPT_URL" | python3 -; then
+            error "Python 脚本执行失败，请检查 GitHub 地址是否正确，或网络是否稳定"
+        fi
+    else
+        # 使用 wget 拉取并通过管道执行
+        if ! wget -qO- --timeout="$TIMEOUT" --tries=3 "$PY_SCRIPT_URL" | python3 -; then
+            error "Python 脚本执行失败，请检查 GitHub 地址是否正确，或网络是否稳定"
+        fi
+    fi
+}
+
+# 主函数
+main() {
+    info "===== Fastfetch 一键安装脚本 ====="
+    
+    # 前置检查
+    check_dependencies
+    check_network
+    
+    # 执行核心逻辑
+    run_python_script
+    
+    # 执行完成提示
+    info "===== 安装流程执行完毕 ====="
+    info "✅ 请重启终端，或执行以下命令立即生效："
+    echo "   source /etc/profile  # Bash 用户"
+    echo "   source ~/.zshrc   # Zsh 用户"
+}
+
+# 启动主函数
+main "$@"
+}
+
 Choice_change(){
     clear
      yellow " ================== "
@@ -637,9 +756,10 @@ start_menu(){
 	 blue " 18.配置Centos的neofetch"
 	 blue " 19.配置Ubuntu的neofetch"
 	 blue " 20.配置Debian的neofetch"
-	 blue " 21.建议安装软件包"
-	 blue " 22.一键更换仓库源"
-	 blue " 23.一键安装docker"
+	 blue " 21.自适应配置fastfetch"
+	 blue " 22.建议安装软件包"
+	 blue " 23.一键更换仓库源"
+	 blue " 24.一键安装docker"
 	 yellow " ========================================================== "
      red " 0. 退出脚本"
     echo
@@ -727,13 +847,17 @@ case $num in
 	green "Debian的neofetch已配置!"
 	;;
 21)
+	install_fastfetch
+	green "neofetch已配置完成!"
+	;;
+22)
     minimal_install
     green "建议安装软件包已安装完成!"
     ;;
-22)
+23)
     Choice_change
     ;;
-23)
+24)
     Install_Docker
     ;;
 0)
