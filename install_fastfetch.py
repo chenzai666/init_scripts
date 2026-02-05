@@ -91,8 +91,67 @@ def check_installed(package):
     result = run_command(f"command -v {package}", f"检查{package}是否安装", check=False)
     return result is not None and result.returncode == 0
 
+def install_lolcat_from_github():
+    """从GitHub安装lolcat"""
+    print("🎯 尝试从GitHub源码安装lolcat...")
+    
+    # 1. 安装Ruby（如果尚未安装）
+    if not check_installed("ruby"):
+        pm = detect_package_manager()
+        ruby_pkg = "ruby-dev" if pm == "apt" else "ruby"
+        
+        if pm == "apt":
+            run_command("apt update -y", "更新仓库")
+            run_command(f"apt install -y {ruby_pkg}", "安装Ruby")
+        elif pm == "dnf" or pm == "yum":
+            run_command(f"{pm} install -y ruby", "安装Ruby")
+        elif pm == "pacman":
+            run_command("pacman -Sy --noconfirm ruby", "安装Ruby")
+        elif pm == "zypper":
+            run_command("zypper install -y ruby", "安装Ruby")
+        elif pm == "apk":
+            run_command("apk add ruby", "安装Ruby")
+        
+        if not check_installed("ruby"):
+            print("❌ Ruby安装失败，无法继续安装lolcat")
+            return False
+    
+    # 2. 安装gem（如果尚未安装）
+    if not check_installed("gem"):
+        if run_command("ruby -e 'puts \"Gem不需要单独安装\"'", "检查gem"):
+            print("ℹ️ gem已作为Ruby的一部分安装")
+        else:
+            gem_pkg = "rubygems" if detect_package_manager() == "apt" else "rubygems"
+            run_command(f"{detect_package_manager()} install -y {gem_pkg}", "安装gem")
+    
+    # 3. 使用gem安装lolcat
+    if run_command("gem install lolcat", "使用gem安装lolcat"):
+        print("✅ 成功通过gem安装lolcat")
+        return True
+    
+    # 4. 终极方法：直接下载lolcat脚本
+    lolcat_url = "https://raw.githubusercontent.com/busyloop/lolcat/master/bin/lolcat"
+    install_path = "/usr/local/bin/lolcat"
+    
+    try:
+        print("📦 直接下载lolcat脚本...")
+        # 下载脚本
+        urllib.request.urlretrieve(lolcat_url, install_path)
+        
+        # 添加执行权限
+        os.chmod(install_path, 0o755)
+        print(f"✅ lolcat已安装到 {install_path}")
+        
+        # 检查依赖
+        print("🔍 检查依赖...")
+        run_command("lolcat --help > /dev/null", "测试lolcat", check=False)
+        return True
+    except Exception as e:
+        print(f"❌ 下载lolcat失败: {str(e)}")
+        return False
+
 def install_lolcat(pm):
-    """安装 lolcat"""
+    """安装 lolcat（优先包管理器，失败时使用GitHub）"""
     install_cmds = {
         "apt": "apt install -y lolcat",
         "dnf": "dnf install -y lolcat",
@@ -105,11 +164,14 @@ def install_lolcat(pm):
     if pm in install_cmds:
         if pm == "apt":
             run_command("apt update -y", "更新软件仓库")
-        result = run_command(install_cmds[pm], "安装 lolcat")
-        return result is not None
-    else:
-        print("❌ 暂不支持当前系统安装 lolcat，请手动安装")
-        return False
+        
+        result = run_command(install_cmds[pm], "使用包管理器安装 lolcat")
+        if result:
+            return True
+    
+    # 包管理器安装失败，尝试GitHub安装
+    print("⚠️ 包管理器安装失败，尝试GitHub方法...")
+    return install_lolcat_from_github()
 
 def install_fastfetch_ubuntu_debian(os_info):
     """针对 Ubuntu/Debian 安装 fastfetch"""
@@ -251,8 +313,12 @@ def main():
     
     # 1. 安装 lolcat
     if not check_installed("lolcat"):
+        print("📦 lolcat 未安装，开始安装...")
         if not install_lolcat(pm):
+            print("❌ lolcat 安装失败，脚本终止")
             sys.exit(1)
+        else:
+            print("✅ lolcat 安装成功")
     else:
         print("✅ lolcat 已安装")
     
@@ -271,16 +337,25 @@ def main():
         if not install_success:
             print("❌ fastfetch 安装失败，请参考官方文档手动安装")
             sys.exit(1)
+        else:
+            print("✅ fastfetch 安装成功")
     else:
         print("✅ fastfetch 已安装")
     
     # 3. 配置自动执行
-    add_to_profile()
+    if add_to_profile():
+        print("✅ 配置成功写入")
+    else:
+        print("⚠️ 配置写入失败，可能需要手动配置")
     
     # 验证
     if check_installed("fastfetch") and check_installed("lolcat"):
         print("\n🎉 安装完成！")
         print("📌 生效方式：重启终端 或 执行 source /etc/profile (bash) / source ~/.zshrc (zsh)")
+        
+        # 尝试立即显示效果
+        print("\n尝试显示效果（可能需要重启终端才能正常显示颜色）...")
+        run_command("fastfetch | lolcat", "显示系统信息", check=False)
     else:
         print("\n❌ 安装未完全成功")
 
