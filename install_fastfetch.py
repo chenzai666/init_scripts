@@ -8,11 +8,9 @@ import json
 import tarfile
 import shutil
 import re
-
 def is_root():
     """检查是否以 root 权限运行脚本"""
     return os.geteuid() == 0
-
 def run_command(cmd, description, check=True):
     """执行系统命令并处理输出和异常"""
     try:
@@ -29,7 +27,9 @@ def run_command(cmd, description, check=True):
     except subprocess.CalledProcessError as e:
         print(f"❌ {description}失败: {e.stderr.strip()}")
         return None
-
+    except Exception as e:
+        print(f"❌ {description}发生意外错误: {str(e)}")
+        return None
 def detect_os_info():
     """检测系统发行版和版本"""
     os_info = {"distro": None, "version": None}
@@ -50,11 +50,13 @@ def detect_os_info():
         os_info["distro"] = "debian"
     
     return os_info
-
 def compare_version(version1, version2):
     """比较版本号（如 22.04 > 20.04）"""
-    v1_parts = list(map(float, version1.split(".")))
-    v2_parts = list(map(float, version2.split(".")))
+    try:
+        v1_parts = list(map(int, version1.split(".")))
+        v2_parts = list(map(int, version2.split(".")))
+    except ValueError:
+        return 0  # 版本号格式错误时不比较
     
     # 补齐版本号位数
     max_len = max(len(v1_parts), len(v2_parts))
@@ -67,7 +69,6 @@ def compare_version(version1, version2):
         elif v1 < v2:
             return -1
     return 0
-
 def detect_package_manager():
     """检测系统包管理器"""
     if os.path.exists("/usr/bin/apt"):
@@ -85,12 +86,37 @@ def detect_package_manager():
     else:
         print("❌ 不支持的系统包管理器")
         sys.exit(1)
-
 def check_installed(package):
     """检查软件是否已安装"""
     result = run_command(f"command -v {package}", f"检查{package}是否安装", check=False)
     return result is not None and result.returncode == 0
-
+def get_command_path(command):
+    """获取命令的实际安装路径"""
+    try:
+        result = subprocess.run(
+            ["which", command],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        
+        # 如果在PATH中找不到，尝试在常见路径中搜索
+        search_paths = [
+            "/usr/bin", "/usr/local/bin", "/bin", "/usr/sbin", 
+            "/usr/local/sbin", "/sbin", "/usr/games", "/usr/local/games"
+        ]
+        for path in search_paths:
+            full_path = os.path.join(path, command)
+            if os.path.exists(full_path):
+                return full_path
+        
+        return None
+    except Exception as e:
+        print(f"❌ 获取命令路径失败: {str(e)}")
+        return None
 def install_lolcat_from_github():
     """从GitHub安装lolcat"""
     print("🎯 尝试从GitHub源码安装lolcat...")
@@ -114,20 +140,18 @@ def install_lolcat_from_github():
         
         if not check_installed("ruby"):
             print("❌ Ruby安装失败，无法继续安装lolcat")
-            return False
+            return None
     
     # 2. 安装gem（如果尚未安装）
     if not check_installed("gem"):
-        if run_command("ruby -e 'puts \"Gem不需要单独安装\"'", "检查gem"):
-            print("ℹ️ gem已作为Ruby的一部分安装")
-        else:
-            gem_pkg = "rubygems" if detect_package_manager() == "apt" else "rubygems"
-            run_command(f"{detect_package_manager()} install -y {gem_pkg}", "安装gem")
+        gem_pkg = "rubygems" if detect_package_manager() == "apt" else "rubygems"
+        run_command(f"{detect_package_manager()} install -y {gem_pkg}", "安装gem")
     
     # 3. 使用gem安装lolcat
     if run_command("gem install lolcat", "使用gem安装lolcat"):
-        print("✅ 成功通过gem安装lolcat")
-        return True
+        gem_path = get_command_path("lolcat")
+        print(f"✅ 成功通过gem安装lolcat ({gem_path})")
+        return gem_path
     
     # 4. 终极方法：直接下载lolcat脚本
     lolcat_url = "https://raw.githubusercontent.com/busyloop/lolcat/master/bin/lolcat"
@@ -145,11 +169,10 @@ def install_lolcat_from_github():
         # 检查依赖
         print("🔍 检查依赖...")
         run_command("lolcat --help > /dev/null", "测试lolcat", check=False)
-        return True
+        return install_path
     except Exception as e:
         print(f"❌ 下载lolcat失败: {str(e)}")
-        return False
-
+        return None
 def install_lolcat(pm):
     """安装 lolcat（优先包管理器，失败时使用GitHub）"""
     install_cmds = {
@@ -166,13 +189,12 @@ def install_lolcat(pm):
             run_command("apt update -y", "更新软件仓库")
         
         result = run_command(install_cmds[pm], "使用包管理器安装 lolcat")
-        if result:
-            return True
+        if result and result.returncode == 0:
+            return get_command_path("lolcat")
     
     # 包管理器安装失败，尝试GitHub安装
     print("⚠️ 包管理器安装失败，尝试GitHub方法...")
     return install_lolcat_from_github()
-
 def install_fastfetch_ubuntu_debian(os_info):
     """针对 Ubuntu/Debian 安装 fastfetch"""
     distro = os_info["distro"]
@@ -184,18 +206,15 @@ def install_fastfetch_ubuntu_debian(os_info):
         run_command("apt install -y software-properties-common", "安装依赖")
         # 添加 PPA
         add_ppa = run_command("add-apt-repository -y ppa:zhangsongcui3371/fastfetch", "添加 fastfetch PPA")
-        if add_ppa:
+        if add_ppa and add_ppa.returncode == 0:
             run_command("apt update -y", "更新 PPA 仓库")
             install = run_command("apt install -y fastfetch", "从 PPA 安装 fastfetch")
-            return install is not None
+            return install is not None and install.returncode == 0
     
     # Ubuntu 20.04+/Debian 11+：下载 deb 包安装
     arch = platform.machine()
-    arch_map = {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "armhf"}
-    deb_arch = arch_map.get(arch, None)
-    if not deb_arch:
-        print(f"❌ 不支持的架构 {arch}，无法安装 deb 包")
-        return False
+    arch_map = {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "armhf", "armv8l": "arm64"}
+    deb_arch = arch_map.get(arch, arch)
     
     # 获取最新 deb 包下载链接
     api_url = "https://api.github.com/repos/fastfetch-cli/fastfetch/releases/latest"
@@ -222,7 +241,7 @@ def install_fastfetch_ubuntu_debian(os_info):
         
         # 安装 deb 包
         install = run_command(f"dpkg -i {deb_file}", "安装 fastfetch deb 包")
-        if install:
+        if install and install.returncode == 0:
             # 修复依赖问题
             run_command("apt install -f -y", "修复依赖")
             os.remove(deb_file)
@@ -236,10 +255,9 @@ def install_fastfetch_ubuntu_debian(os_info):
        (distro == "ubuntu" and compare_version(version, "25.04") >= 0):
         run_command("apt update -y", "更新软件仓库")
         install = run_command("apt install -y fastfetch", "从仓库安装 fastfetch")
-        return install is not None
+        return install is not None and install.returncode == 0
     
     return False
-
 def install_fastfetch_other(pm):
     """其他发行版安装 fastfetch"""
     install_cmds = {
@@ -252,54 +270,91 @@ def install_fastfetch_other(pm):
     
     if pm in install_cmds:
         result = run_command(install_cmds[pm], f"使用 {pm} 安装 fastfetch")
-        return result is not None
+        return result is not None and result.returncode == 0
     else:
         print("❌ 暂不支持当前系统自动安装 fastfetch，请手动安装")
         return False
-
-def add_to_profile():
+def add_to_profile(fastfetch_path, lolcat_path):
     """将 fastfetch | lolcat 写入 profile 文件"""
-    config_line = "\n# Auto-run fastfetch with lolcat (added by fastfetch install script)\n/usr/bin/fastfetch | lolcat\n"
+    # 确保路径正确
+    if not fastfetch_path or not os.path.exists(fastfetch_path):
+        print(f"❌ 无法找到 fastfetch 路径: {fastfetch_path}")
+        return False
+    
+    if not lolcat_path or not os.path.exists(lolcat_path):
+        print(f"❌ 无法找到 lolcat 路径: {lolcat_path}")
+        return False
+    
+    # 构造配置命令
+    config_command = f"{fastfetch_path} | {lolcat_path}"
+    
+    # 配置文件模板
+    config_content = f"""
+# Auto-run fastfetch with lolcat (added by installer)
+if [[ $- == *i* ]]; then  # Only run in interactive shells
+    if command -v {fastfetch_path} >/dev/null 2>&1 && command -v {lolcat_path} >/dev/null 2>&1; then
+        {config_command}
+    fi
+fi
+"""
+    
+    print(f"📝 配置命令: {config_command}")
     
     # 优先用户级配置文件
     profile_files = [
         os.path.expanduser("/etc/profile"),
         os.path.expanduser("~/.zshrc"),
-        "~/.bashrc"
+        os.path.expanduser("~/.bashrc"),
     ]
     
     target_file = None
+    # 查找已存在的配置文件
     for pf in profile_files:
         if os.path.exists(pf):
             target_file = pf
+            print(f"🔍 找到配置文件: {target_file}")
             break
+    
+    # 如果未找到任何配置文件，默认使用 ~/.bashrc
     if not target_file:
-        target_file = os.path.expanduser("/etc/profile")
+        target_file = os.path.expanduser("~/.bashrc")
+        print(f"⚠️ 未找到配置文件，将创建新文件: {target_file}")
     
     # 检查是否已存在配置
     try:
-        with open(target_file, "r") as f:
-            if "/usr/bin/fastfetch | lolcat" in f.read():
-                print("✅ fastfetch 配置已存在，无需重复写入")
-                return True
-    except FileNotFoundError:
-        pass
+        if os.path.exists(target_file):
+            with open(target_file, "r") as f:
+                content = f.read()
+                if config_command in content:
+                    print(f"✅ fastfetch 配置已存在于 {target_file}，无需重复写入")
+                    return True
+                elif "fastfetch | lolcat" in content:
+                    print(f"⚠️ 检测到旧的配置，建议手动更新: {target_file}")
+    except Exception as e:
+        print(f"❌ 检查配置文件失败: {str(e)}")
     
     # 写入配置
     try:
         with open(target_file, "a") as f:
-            f.write(config_line)
-        print(f"✅ 已将 /usr/bin/fastfetch | lolcat 写入 {target_file}")
+            f.write(config_content)
+        print(f"✅ 已将配置写入 {target_file}")
         return True
     except PermissionError:
         print(f"❌ 无权限写入 {target_file}，请以 root 运行")
+        print("💡 您可以手动添加以下内容到配置文件中:")
+        print("-" * 60)
+        print(config_content)
+        print("-" * 60)
         return False
-
+    except Exception as e:
+        print(f"❌ 写入配置文件失败: {str(e)}")
+        return False
 def main():
     """主函数"""
     if not is_root():
         print("❌ 请以 root 权限运行（sudo python3 脚本名.py）")
         sys.exit(1)
+
     
     # 检测系统信息
     os_info = detect_os_info()
@@ -310,19 +365,24 @@ def main():
     
     # 检测包管理器
     pm = detect_package_manager()
+    print(f"📦 检测到包管理器: {pm}")
     
     # 1. 安装 lolcat
+    lolcat_path = None
     if not check_installed("lolcat"):
         print("📦 lolcat 未安装，开始安装...")
-        if not install_lolcat(pm):
+        lolcat_path = install_lolcat(pm)
+        if not lolcat_path:
             print("❌ lolcat 安装失败，脚本终止")
             sys.exit(1)
         else:
-            print("✅ lolcat 安装成功")
+            print(f"✅ lolcat 安装成功: {lolcat_path}")
     else:
-        print("✅ lolcat 已安装")
+        lolcat_path = get_command_path("lolcat")
+        print(f"✅ lolcat 已安装: {lolcat_path}")
     
     # 2. 安装 fastfetch
+    fastfetch_path = None
     if not check_installed("fastfetch"):
         print("📦 fastfetch 未安装，开始安装...")
         install_success = False
@@ -338,26 +398,33 @@ def main():
             print("❌ fastfetch 安装失败，请参考官方文档手动安装")
             sys.exit(1)
         else:
-            print("✅ fastfetch 安装成功")
+            fastfetch_path = get_command_path("fastfetch")
+            print(f"✅ fastfetch 安装成功: {fastfetch_path}")
     else:
-        print("✅ fastfetch 已安装")
+        fastfetch_path = get_command_path("fastfetch")
+        print(f"✅ fastfetch 已安装: {fastfetch_path}")
     
     # 3. 配置自动执行
-    if add_to_profile():
+    if not fastfetch_path:
+        fastfetch_path = get_command_path("fastfetch")
+    if not lolcat_path:
+        lolcat_path = get_command_path("lolcat")
+    
+    if add_to_profile(fastfetch_path, lolcat_path):
         print("✅ 配置成功写入")
     else:
         print("⚠️ 配置写入失败，可能需要手动配置")
     
     # 验证
-    if check_installed("fastfetch") and check_installed("lolcat"):
+    if fastfetch_path and lolcat_path:
         print("\n🎉 安装完成！")
         print("📌 生效方式：重启终端 或 执行 source /etc/profile (bash) / source ~/.zshrc (zsh)")
         
         # 尝试立即显示效果
         print("\n尝试显示效果（可能需要重启终端才能正常显示颜色）...")
-        run_command("fastfetch | lolcat", "显示系统信息", check=False)
+        run_command(f"{fastfetch_path} | {lolcat_path}", "显示系统信息", check=False)
     else:
-        print("\n❌ 安装未完全成功")
+        print("\n❌ 安装未完全成功，请检查错误信息")
 
 if __name__ == "__main__":
     main()
