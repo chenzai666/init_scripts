@@ -140,7 +140,7 @@ def write_system_profile(fastfetch_path: str, lolcat_path: str):
         tmpfile = tempfile.NamedTemporaryFile(mode='w', delete=False)
         tmpfile.write(cleaned_content.strip() + "\n" + new_block)
         tmpfile.close()
-        run_command(["sudo", "mv", tmpfile.name, profile_file])
+        run_command(["mv", tmpfile.name, profile_file])
         print(f"✅ 已更新系统配置文件: {profile_file}")
     except Exception as e:
         print(f"❌ 写入 {profile_file} 失败: {e}")
