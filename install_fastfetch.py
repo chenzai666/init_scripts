@@ -112,20 +112,50 @@ def write_shell_config(fastfetch_path: str, lolcat_path: str):
         print("⚠️ 未识别的 shell，跳过自动写入")
         return
 
-    command_line = f"\n# Auto start fastfetch\n{fastfetch_path} | {lolcat_path}\n"
+    start_marker = "# >>> init_fastfetch_start >>>"
+    end_marker = "# <<< init_fastfetch_end <<<"
 
-    # 避免重复写入
-    if os.path.exists(config_file):
-        with open(config_file, "r") as f:
-            content = f.read()
-            if fastfetch_path in content:
-                print("ℹ️ 已存在 fastfetch 启动配置，跳过写入")
-                return
+    new_block = (
+        f"\n{start_marker}\n"
+        f"{fastfetch_path} | {lolcat_path}\n"
+        f"{end_marker}\n"
+    )
 
-    with open(config_file, "a") as f:
-        f.write(command_line)
+    # 如果文件不存在，直接创建
+    if not os.path.exists(config_file):
+        with open(config_file, "w") as f:
+            f.write(new_block)
+        print(f"✅ 已创建并写入: {config_file}")
+        return
 
-    print(f"✅ 已写入配置文件: {config_file}")
+    with open(config_file, "r") as f:
+        content = f.read()
+
+    # 删除旧标记块
+    if start_marker in content and end_marker in content:
+        import re
+        pattern = re.compile(
+            f"{start_marker}.*?{end_marker}",
+            re.DOTALL
+        )
+        content = pattern.sub("", content)
+        print("🧹 已删除旧的 fastfetch 配置块")
+
+    # 额外清理旧版本（没有标记的旧写法）
+    lines = content.splitlines()
+    cleaned_lines = [
+        line for line in lines
+        if "fastfetch" not in line and "lolcat" not in line
+    ]
+
+    cleaned_content = "\n".join(cleaned_lines)
+
+    # 重新写入
+    with open(config_file, "w") as f:
+        f.write(cleaned_content.strip() + "\n" + new_block)
+
+    print(f"✅ 已更新配置文件: {config_file}")
+
 
 
 # ------------------------------
