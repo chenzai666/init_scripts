@@ -1,62 +1,53 @@
 #!/usr/bin/env python3
 """
-Fastfetch 自动安装脚本
---------------------------------------
-兼容:
+Fastfetch + lolcat 自动安装 & 自动写入 shell 配置
+兼容：
 - Arch (pacman)
 - Debian / Ubuntu (apt)
 - Fedora (dnf)
 - Alpine (apk)
-
-设计原则:
-- 不依赖系统 which 命令
-- 使用 Python 内置 shutil.which() 判断命令存在
-- 统一安装流程
-- 清晰错误提示
 """
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
+import platform
 
+
+# ------------------------------
+# 基础工具函数
+# ------------------------------
 
 def run_command(cmd: list) -> bool:
-    """
-    执行系统命令
-
-    :param cmd: 命令列表，例如 ["sudo", "pacman", "-S", "fastfetch"]
-    :return: 成功返回 True，失败返回 False
-    """
+    """执行系统命令"""
     try:
         subprocess.check_call(cmd)
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ 命令执行失败: {' '.join(cmd)}")
-        print(f"错误信息: {e}")
+        print(f"错误: {e}")
         return False
 
 
 def command_exists(cmd: str) -> bool:
-    """
-    判断命令是否存在
-
-    使用 shutil.which() 而不是系统 which，
-    避免 Arch 等系统未安装 which 时出错。
-
-    :param cmd: 命令名称
-    :return: 存在返回 True
-    """
+    """判断命令是否存在（不依赖 which）"""
     return shutil.which(cmd) is not None
 
 
-def detect_package_manager() -> str | None:
-    """
-    自动检测系统包管理器
+def get_real_path(cmd: str) -> str | None:
+    """获取命令真实路径"""
+    path = shutil.which(cmd)
+    if path:
+        return os.path.realpath(path)
+    return None
 
-    :return: 包管理器名称或 None
-    """
+
+# ------------------------------
+# 包管理器检测
+# ------------------------------
+
+def detect_package_manager() -> str | None:
     if command_exists("pacman"):
         return "pacman"
     elif command_exists("apt"):
@@ -70,20 +61,12 @@ def detect_package_manager() -> str | None:
 
 
 def install_package(pkg_manager: str, package_name: str) -> bool:
-    """
-    根据包管理器安装软件
-
-    :param pkg_manager: 包管理器名称
-    :param package_name: 软件包名
-    :return: 安装是否成功
-    """
     print(f"📦 使用 {pkg_manager} 安装 {package_name}...")
 
     if pkg_manager == "pacman":
         return run_command(["sudo", "pacman", "-Sy", "--noconfirm", package_name])
 
     elif pkg_manager == "apt":
-        # apt 需要先 update
         run_command(["sudo", "apt", "update"])
         return run_command(["sudo", "apt", "install", "-y", package_name])
 
@@ -93,45 +76,32 @@ def install_package(pkg_manager: str, package_name: str) -> bool:
     elif pkg_manager == "apk":
         return run_command(["sudo", "apk", "add", package_name])
 
-    else:
-        print("❌ 不支持的包管理器")
-        return False
+    return False
 
 
 def ensure_installed(pkg_manager: str, package_name: str) -> bool:
-    """
-    确保软件已安装
-
-    如果未安装则自动安装，并再次验证。
-
-    :param pkg_manager: 包管理器
-    :param package_name: 软件名
-    :return: 是否安装成功
-    """
     print(f"🔍 检查 {package_name} 是否已安装...")
 
-    # 先检测是否已经存在
     if command_exists(package_name):
         print(f"✅ {package_name} 已安装")
         return True
 
     print(f"📦 {package_name} 未安装，开始安装...")
-
     success = install_package(pkg_manager, package_name)
 
-    # 安装后再次检查
     if success and command_exists(package_name):
         print(f"✅ {package_name} 安装成功")
         return True
-    else:
-        print(f"❌ {package_name} 安装失败")
-        return False
-        
-def add_to_shell_config():
-    """
-    自动写入当前用户 shell 配置文件
-    """
 
+    print(f"❌ {package_name} 安装失败")
+    return False
+
+
+# ------------------------------
+# 写入 Shell 配置
+# ------------------------------
+
+def write_shell_config(fastfetch_path: str, lolcat_path: str):
     shell = os.environ.get("SHELL", "")
 
     if "bash" in shell:
@@ -142,31 +112,29 @@ def add_to_shell_config():
         print("⚠️ 未识别的 shell，跳过自动写入")
         return
 
-    line = "\n# Auto start fastfetch\nfastfetch\n"
+    command_line = f"\n# Auto start fastfetch\n{fastfetch_path} | {lolcat_path}\n"
 
     # 避免重复写入
     if os.path.exists(config_file):
         with open(config_file, "r") as f:
-            if "fastfetch" in f.read():
-                print("ℹ️ 已存在 fastfetch 启动项")
+            content = f.read()
+            if fastfetch_path in content:
+                print("ℹ️ 已存在 fastfetch 启动配置，跳过写入")
                 return
 
     with open(config_file, "a") as f:
-        f.write(line)
+        f.write(command_line)
 
     print(f"✅ 已写入配置文件: {config_file}")
 
+
+# ------------------------------
+# 主程序
+# ------------------------------
+
 def main():
-    """
-    主函数
-    """
     print("📌 正在检测系统信息...")
-
-    system = platform.system().lower()
-    distro = platform.platform()
-
-    print(f"系统类型: {system}")
-    print(f"发行版信息: {distro}")
+    print(f"系统: {platform.platform()}")
 
     pkg_manager = detect_package_manager()
 
@@ -176,19 +144,30 @@ def main():
 
     print(f"📦 检测到包管理器: {pkg_manager}")
 
-    # 安装 fastfetch
+    # 强制安装 fastfetch
     if not ensure_installed(pkg_manager, "fastfetch"):
-        print("\n❌ fastfetch 安装失败，请检查权限或网络")
         sys.exit(1)
 
-    # 可选安装 lolcat（增强显示效果）
-    ensure_installed(pkg_manager, "lolcat")
+    # 强制安装 lolcat
+    if not ensure_installed(pkg_manager, "lolcat"):
+        sys.exit(1)
 
-    add_to_shell_config()
+    # 获取真实路径
+    fastfetch_path = get_real_path("fastfetch")
+    lolcat_path = get_real_path("lolcat")
 
-    print("\n🎉 安装完成！")
-    print("现在可以运行:")
-    print("   fastfetch")
+    if not fastfetch_path or not lolcat_path:
+        print("❌ 无法获取程序真实路径")
+        sys.exit(1)
+
+    print(f"📍 fastfetch 路径: {fastfetch_path}")
+    print(f"📍 lolcat 路径: {lolcat_path}")
+
+    # 写入 shell 配置
+    write_shell_config(fastfetch_path, lolcat_path)
+
+    print("\n🎉 安装与配置完成！")
+    print("请重新打开终端生效。")
 
 
 if __name__ == "__main__":
