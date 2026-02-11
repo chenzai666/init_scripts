@@ -677,7 +677,7 @@ main() {
     # 执行完成提示
     info "===== 安装流程执行完毕 ====="
     info "✅ 请重启终端，或执行以下命令立即生效："
-    echo "   source /etc/profile  # Bash 用户"
+    echo "   source ~/.bashrc  # Bash 用户"
     echo "   source ~/.zshrc   # Zsh 用户"
 }
 
