@@ -126,7 +126,35 @@ def ensure_installed(pkg_manager: str, package_name: str) -> bool:
     else:
         print(f"❌ {package_name} 安装失败")
         return False
+        
+def add_to_shell_config():
+    """
+    自动写入当前用户 shell 配置文件
+    """
 
+    shell = os.environ.get("SHELL", "")
+
+    if "bash" in shell:
+        config_file = os.path.expanduser("~/.bashrc")
+    elif "zsh" in shell:
+        config_file = os.path.expanduser("~/.zshrc")
+    else:
+        print("⚠️ 未识别的 shell，跳过自动写入")
+        return
+
+    line = "\n# Auto start fastfetch\nfastfetch\n"
+
+    # 避免重复写入
+    if os.path.exists(config_file):
+        with open(config_file, "r") as f:
+            if "fastfetch" in f.read():
+                print("ℹ️ 已存在 fastfetch 启动项")
+                return
+
+    with open(config_file, "a") as f:
+        f.write(line)
+
+    print(f"✅ 已写入配置文件: {config_file}")
 
 def main():
     """
@@ -155,6 +183,8 @@ def main():
 
     # 可选安装 lolcat（增强显示效果）
     ensure_installed(pkg_manager, "lolcat")
+
+    add_to_shell_config()
 
     print("\n🎉 安装完成！")
     print("现在可以运行:")
