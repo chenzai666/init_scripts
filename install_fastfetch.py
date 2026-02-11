@@ -101,17 +101,8 @@ def ensure_installed(pkg_manager: str, package_name: str) -> bool:
 # 写入 Shell 配置
 # ------------------------------
 
-def write_shell_config(fastfetch_path: str, lolcat_path: str):
-    shell = os.environ.get("SHELL", "")
-
-    if "bash" in shell:
-        config_file = os.path.expanduser("~/.bashrc")
-    elif "zsh" in shell:
-        config_file = os.path.expanduser("~/.zshrc")
-    else:
-        print("⚠️ 未识别的 shell，跳过自动写入")
-        return
-
+def write_system_profile(fastfetch_path: str, lolcat_path: str):
+    profile_file = "/etc/profile"
     start_marker = "# >>> init_fastfetch_start >>>"
     end_marker = "# <<< init_fastfetch_end <<<"
 
@@ -121,23 +112,17 @@ def write_shell_config(fastfetch_path: str, lolcat_path: str):
         f"{end_marker}\n"
     )
 
-    # 如果文件不存在，直接创建
-    if not os.path.exists(config_file):
-        with open(config_file, "w") as f:
-            f.write(new_block)
-        print(f"✅ 已创建并写入: {config_file}")
-        return
-
-    with open(config_file, "r") as f:
-        content = f.read()
+    # 读取现有内容
+    if os.path.exists(profile_file):
+        with open(profile_file, "r") as f:
+            content = f.read()
+    else:
+        content = ""
 
     # 删除旧标记块
     if start_marker in content and end_marker in content:
         import re
-        pattern = re.compile(
-            f"{start_marker}.*?{end_marker}",
-            re.DOTALL
-        )
+        pattern = re.compile(f"{start_marker}.*?{end_marker}", re.DOTALL)
         content = pattern.sub("", content)
         print("🧹 已删除旧的 fastfetch 配置块")
 
@@ -147,14 +132,19 @@ def write_shell_config(fastfetch_path: str, lolcat_path: str):
         line for line in lines
         if "fastfetch" not in line and "lolcat" not in line
     ]
-
     cleaned_content = "\n".join(cleaned_lines)
 
-    # 重新写入
-    with open(config_file, "w") as f:
-        f.write(cleaned_content.strip() + "\n" + new_block)
+    # 重新写入 /etc/profile，需要 sudo
+    try:
+        import tempfile
+        tmpfile = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        tmpfile.write(cleaned_content.strip() + "\n" + new_block)
+        tmpfile.close()
+        run_command(["sudo", "mv", tmpfile.name, profile_file])
+        print(f"✅ 已更新系统配置文件: {profile_file}")
+    except Exception as e:
+        print(f"❌ 写入 {profile_file} 失败: {e}")
 
-    print(f"✅ 已更新配置文件: {config_file}")
 
 
 
@@ -194,7 +184,7 @@ def main():
     print(f"📍 lolcat 路径: {lolcat_path}")
 
     # 写入 shell 配置
-    write_shell_config(fastfetch_path, lolcat_path)
+    write_system_profile(fastfetch_path, lolcat_path)
 
     print("\n🎉 安装与配置完成！")
     print("请重新打开终端生效。")
