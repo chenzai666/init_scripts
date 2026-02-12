@@ -150,8 +150,102 @@ def install_fastfetch():
         print(f"清理构建目录: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
 
-# 安装Lolcat
-def install_lolcat():
+# Ubuntu 22.04专用的Lolcat安装方法
+def install_lolcat_ubuntu():
+    print("\n正在安装Lolcat (Ubuntu 22.04专用方法)...")
+    
+    # 查找现有安装路径
+    existing_path = shutil.which("lolcat")
+    if existing_path:
+        print(f"Lolcat 已经安装于: {existing_path}")
+        return existing_path
+    
+    # 检查Ruby是否已安装
+    try:
+        subprocess.run(["which", "ruby"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("Ruby 已安装")
+    except:
+        os_id = detect_os()
+        print(f"安装 Ruby ({os_id})")
+        # Ubuntu 22.04需要特定版本
+        packages = "ruby-full ruby-bundler build-essential"
+        result = subprocess.run(f"apt-get install -y {packages}".split(), stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        if result.returncode != 0:
+            print(f"安装Ruby失败: {result.stderr.decode('utf-8')}")
+            sys.exit(1)
+    
+    # 使用gem安装 - 使用用户目录避免权限问题
+    print("使用 gem 安装 Lolcat (用户模式)")
+    
+    # 创建安全的安装目录
+    gem_home = "/usr/local/share/gems"
+    os.makedirs(gem_home, exist_ok=True)
+    
+    # 设置环境变量
+    env = os.environ.copy()
+    env["GEM_HOME"] = gem_home
+    env["GEM_PATH"] = gem_home
+    
+    # 安装命令
+    cmd = ["gem", "install", "lolcat", "--no-document"]
+    result = subprocess.run(cmd, env=env, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    
+    if result.returncode != 0:
+        print(f"gem安装失败，尝试使用bundler安装...")
+        
+        # 使用bundler作为备选方案
+        bundle_cmd = ["bundle", "config", "set", "--local", "path", gem_home]
+        result_bundle = subprocess.run(bundle_cmd, env=env, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        
+        if result_bundle.returncode == 0:
+            bundle_install = ["bundle", "install", "--gemfile", "/dev/null", "--gem", "lolcat"]
+            result_bundle_install = subprocess.run(bundle_install, env=env, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            
+            if result_bundle_install.returncode != 0:
+                print(f"bundler安装失败: {result_bundle_install.stderr.decode('utf-8')}")
+                sys.exit(1)
+        else:
+            print(f"bundler配置失败: {result_bundle.stderr.decode('utf-8')}")
+            sys.exit(1)
+    
+    # 查找安装路径
+    lolcat_path = shutil.which("lolcat") or os.path.join(gem_home, "bin", "lolcat")
+    
+    if not os.path.exists(lolcat_path):
+        # 尝试从gem环境获取路径
+        env_cmd = ["gem", "env", "executables_dir"]
+        result = subprocess.run(env_cmd, env=env, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        
+        if result.returncode == 0:
+            gem_bin = result.stdout.strip()
+            lolcat_path = os.path.join(gem_bin, "lolcat")
+        else:
+            # 回退到全局搜索
+            print("警告: 无法确定gem可执行文件目录，尝试全局搜索")
+            search_cmd = ["find", gem_home, "-name", "lolcat", "-type", "f", "-executable"]
+            result = subprocess.run(search_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            
+            if result.returncode == 0 and result.stdout:
+                lolcat_path = result.stdout.splitlines()[0].strip()
+    
+    if not lolcat_path or not os.path.exists(lolcat_path):
+        print("错误：无法找到 Lolcat 安装路径")
+        sys.exit(1)
+    
+    # 添加到系统PATH
+    lolcat_dir = os.path.dirname(lolcat_path)
+    if lolcat_dir not in os.environ["PATH"]:
+        print(f"添加gem路径到系统PATH: {lolcat_dir}")
+        with open("/etc/profile.d/gem_path.sh", "w") as f:
+            f.write(f'export PATH="$PATH:{lolcat_dir}"\n')
+        os.chmod("/etc/profile.d/gem_path.sh", 0o755)
+        # 立即更新当前环境
+        os.environ["PATH"] += f":{lolcat_dir}"
+    
+    print(f"Lolcat 安装成功: {lolcat_path}")
+    return lolcat_path
+# 通用的Lolcat安装方法
+def install_lolcat_generic():
     print("\n正在安装Lolcat...")
     
     # 查找现有安装路径
@@ -182,49 +276,51 @@ def install_lolcat():
         }
         
         if os_id in package_managers:
-            subprocess.run(package_managers[os_id].split(), check=True, stderr=subprocess.PIPE)
+            cmd = package_managers[os_id].split()
+            result = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            if result.returncode != 0:
+                print(f"安装Ruby失败: {result.stderr.decode('utf-8')}")
+                sys.exit(1)
         else:
             print("错误：无法安装Ruby，请手动安装后再运行脚本")
             sys.exit(1)
     
     # 使用gem安装
     print("使用 gem 安装 Lolcat")
-    subprocess.run(["gem", "install", "lolcat", "--no-document"], check=True, stderr=subprocess.PIPE)
+    install_cmd = ["gem", "install", "lolcat", "--no-document"]
+    result = subprocess.run(install_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     
-    # 获取gem安装路径
-    gem_env = subprocess.check_output(["gem", "env"], universal_newlines=True, stderr=subprocess.DEVNULL)
-    gem_path = None
-    for line in gem_env.splitlines():
-        if "EXECUTABLE DIRECTORY" in line:
-            gem_path = line.split(":")[1].strip()
-            break
-    
-    lolcat_path = None
-    if gem_path:
-        lolcat_path = os.path.join(gem_path, "lolcat")
-        if os.path.exists(lolcat_path):
-            print(f"找到 Lolcat: {lolcat_path}")
-    
-    # 添加到PATH（如果gem bin目录不在PATH中）
-    if gem_path and gem_path not in os.environ["PATH"]:
-        print(f"添加 gem 路径到系统 PATH: {gem_path}")
-        with open("/etc/profile.d/gem_path.sh", "w") as f:
-            f.write(f'export PATH="$PATH:{gem_path}"\n')
-        os.chmod("/etc/profile.d/gem_path.sh", 0o755)
-        # 立即更新当前环境
-        os.environ["PATH"] += f":{gem_path}"
+    if result.returncode != 0:
+        print(f"gem安装失败: {result.stderr.decode('utf-8')}")
+        sys.exit(1)
     
     # 获取安装路径
-    if not lolcat_path:
-        lolcat_path = shutil.which("lolcat")
+    lolcat_path = shutil.which("lolcat")
     
     if not lolcat_path:
+        # 尝试从gem环境获取路径
+        env_cmd = ["gem", "env", "executables_dir"]
+        result = subprocess.run(env_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        
+        if result.returncode == 0:
+            gem_bin = result.stdout.strip()
+            lolcat_path = os.path.join(gem_bin, "lolcat")
+        else:
+            # 回退到全局搜索
+            print("警告: 无法确定gem可执行文件目录，尝试全局搜索")
+            search_cmd = ["find", "/", "-name", "lolcat", "-type", "f", "-executable", "2>/dev/null"]
+            result = subprocess.run(search_cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            
+            if result.returncode == 0 and result.stdout:
+                lolcat_path = result.stdout.splitlines()[0].strip()
+    
+    if not lolcat_path or not os.path.exists(lolcat_path):
         print("错误：无法找到 Lolcat 安装路径")
         sys.exit(1)
     
     print(f"Lolcat 安装成功: {lolcat_path}")
     return lolcat_path
-
+    
 # 清理旧的失效配置
 def remove_old_config():
     config_path = "/etc/profile"
