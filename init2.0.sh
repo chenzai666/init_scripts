@@ -848,7 +848,7 @@ case $num in
 	;;
 21)
 	install_fastfetch
-	green "neofetch已配置完成!"
+	green "fastfetch已配置完成!"
 	;;
 22)
     minimal_install
