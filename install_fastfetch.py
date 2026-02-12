@@ -189,8 +189,7 @@ def install_lolcat_from_source():
         lolcat_path = shutil.which("lolcat")
         if not lolcat_path:
             # 尝试在gem路径中查找
-            gem_path = subprocess.check_output(["gem", "env", "exec_prefix"], text=True).strip()
-            lolcat_path = f"{gem_path}/bin/lolcat"
+            lolcat_path = find_lolcat_path()
         
         print(f"Lolcat 安装成功: {lolcat_path}")
         return lolcat_path
@@ -200,40 +199,68 @@ def install_lolcat_from_source():
         print("尝试替代方法：直接使用gem安装到系统目录")
         os.chdir("/")
         subprocess.run(["gem", "install", "lolcat", "--no-document"], check=True)
-        return shutil.which("lolcat") or "/usr/local/bin/lolcat"
+        return find_lolcat_path() or "/usr/local/bin/lolcat"
         
     finally:
         # 清理工作目录
         print(f"清理构建目录: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
-# 查找Lolcat路径
+# 查找Lolcat路径（优化版）
 def find_lolcat_path():
-    # 标准路径
-    possible_paths = [
+    """更健壮的Lolcat路径查找方法"""
+    # 1. 首先尝试标准路径查找
+    lolcat_path = shutil.which("lolcat")
+    if lolcat_path:
+        return lolcat_path
+    
+    # 2. 常见系统路径
+    common_paths = [
         "/usr/bin/lolcat",
         "/usr/local/bin/lolcat",
-        "/bin/lolcat",
+        "/usr/games/lolcat",  # Debian特有路径
         "/snap/bin/lolcat",
-        "/usr/games/lolcat"
+        "/opt/homebrew/bin/lolcat",  # macOS
+        "/home/linuxbrew/.linuxbrew/bin/lolcat"  # Linuxbrew
     ]
     
-    # 用户gem路径
-    home = os.path.expanduser("~")
-    possible_paths.extend([
+    for path in common_paths:
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+    
+    # 3. 尝试Ruby gem路径
+    try:
+        # 使用更可靠的gem路径查找方法
+        gem_path = subprocess.check_output(
+            ["gem", "environment", "gempath"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).split(":")[0].strip()
+        
+        possible_paths = [
+            f"{gem_path}/bin/lolcat",
+            f"{gem_path}/gems/lolcat-*/bin/lolcat"
+        ]
+        
+        for path in possible_paths:
+            if "*" in path:
+                matches = glob.glob(path)
+                if matches:
+                    return matches[0]
+            elif os.path.exists(path) and os.access(path, os.X_OK):
+                return path
+    
+    except Exception:
+        pass  # 忽略错误
+    
+    # 4. 尝试用户gem路径
+    home = os.environ.get("HOME", "/root")
+    user_paths = [
         f"{home}/.local/bin/lolcat",
         f"{home}/.gem/ruby/*/bin/lolcat",
         f"{home}/.rbenv/shims/lolcat"
-    ])
+    ]
     
-    # 系统gem路径
-    try:
-        gem_path = subprocess.check_output(["gem", "env", "exec_prefix"], text=True).strip()
-        possible_paths.append(f"{gem_path}/bin/lolcat")
-    except:
-        pass
-    
-    # 遍历所有可能路径
-    for path in possible_paths:
+    for path in user_paths:
         if "*" in path:
             matches = glob.glob(path)
             if matches:
@@ -242,30 +269,43 @@ def find_lolcat_path():
             return path
     
     return None
-# 安装Lolcat
+# 安装Lolcat（优化版）
 def install_lolcat():
     print("\n正在安装Lolcat...")
     
     # 查找现有安装路径
-    existing_path = find_lolcat_path()
-    if existing_path:
-        print(f"Lolcat 已经安装于: {existing_path}")
-        return existing_path
+    lolcat_path = find_lolcat_path()
+    if lolcat_path:
+        print(f"Lolcat 已经安装于: {lolcat_path}")
+        return lolcat_path
     
     # 尝试通过包管理器安装
     try:
         print("尝试通过系统包管理器安装lolcat...")
         os_id = detect_os()
-        if os_id in ["ubuntu", "debian", "pop"]:
-            subprocess.run(["apt-get", "install", "-y", "lolcat"], check=True)
+        package_name = {
+            "debian": "lolcat",
+            "ubuntu": "lolcat",
+            "pop": "lolcat",
+            "arch": "lolcat",
+            "manjaro": "lolcat",
+            "fedora": "lolcat",
+            "centos": "lolcat-c",
+            "rhel": "lolcat-c",
+            "opensuse": "rubygem-lolcat",
+            "alpine": "ruby-lolcat"
+        }.get(os_id, "lolcat")
+        
+        if os_id in ["ubuntu", "debian", "pop", "kali"]:
+            subprocess.run(["apt-get", "install", "-y", package_name], check=True)
         elif os_id in ["arch", "manjaro"]:
-            subprocess.run(["pacman", "-S", "--noconfirm", "lolcat"], check=True)
+            subprocess.run(["pacman", "-S", "--noconfirm", package_name], check=True)
         elif os_id in ["fedora", "centos", "rhel"]:
-            subprocess.run(["dnf", "install", "-y", "lolcat"], check=True)
+            subprocess.run(["dnf", "install", "-y", package_name], check=True)
         elif os_id in ["opensuse"]:
-            subprocess.run(["zypper", "install", "-y", "lolcat"], check=True)
+            subprocess.run(["zypper", "install", "-y", package_name], check=True)
         elif os_id in ["alpine"]:
-            subprocess.run(["apk", "add", "lolcat"], check=True)
+            subprocess.run(["apk", "add", package_name], check=True)
         
         # 检查路径
         lolcat_path = find_lolcat_path()
@@ -277,15 +317,13 @@ def install_lolcat():
     except Exception as e:
         print(f"包管理器安装失败: {str(e)}")
     
-    # 尝试使用gem安装
+    # 尝试使用gem安装（优化版）
     try:
         print("尝试使用gem安装lolcat...")
-        # 确保在根目录下执行，避免工作目录问题
-        os.chdir("/")
-        gem_env = subprocess.check_output(["gem", "env"])
+        os.chdir("/")  # 避免工作目录问题
         
-        # 尝试不同安装方式
-        for install_method in ["--user-install", ""]:
+        # 尝试两种安装方式
+        for install_method in ["", "--user-install"]:
             cmd = ["gem", "install", "lolcat", "--no-document"]
             if install_method:
                 cmd.append(install_method)
@@ -295,9 +333,9 @@ def install_lolcat():
                 subprocess.run(cmd, check=True)
                 print("gem安装成功")
                 break
-            except:
-                print(f"gem安装方式 {install_method if install_method else 'system'} 失败，尝试其他方式")
-        
+            except Exception as e:
+                print(f"尝试失败: {str(e)}")
+                
         # 查找路径
         lolcat_path = find_lolcat_path()
         if lolcat_path:
@@ -309,7 +347,7 @@ def install_lolcat():
         print(f"gem安装失败: {str(e)}")
     
     # 如果上述方法都失败，使用源码安装
-    print("所有其他方法失败，使用源码安装...")
+    print("所有方法失败，使用源码安装...")
     return install_lolcat_from_source()
 # 清理旧的失效配置
 def remove_old_config():
@@ -370,7 +408,7 @@ def remove_old_config():
 # 配置终端启动脚本
 def configure_terminal_startup(fastfetch_path, lolcat_path):
     # 清理旧配置
-    remove_old_config()
+    removed = remove_old_config()
     
     # 使用绝对路径创建命令
     config_command = f'{fastfetch_path} | {lolcat_path} -f || true'
