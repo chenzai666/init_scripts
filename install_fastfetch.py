@@ -195,16 +195,59 @@ def install_lolcat_from_source():
         print(f"Lolcat 安装成功: {lolcat_path}")
         return lolcat_path
         
+    except Exception as e:
+        print(f"源码安装失败: {str(e)}")
+        print("尝试替代方法：直接使用gem安装到系统目录")
+        os.chdir("/")
+        subprocess.run(["gem", "install", "lolcat", "--no-document"], check=True)
+        return shutil.which("lolcat") or "/usr/local/bin/lolcat"
+        
     finally:
         # 清理工作目录
         print(f"清理构建目录: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
+# 查找Lolcat路径
+def find_lolcat_path():
+    # 标准路径
+    possible_paths = [
+        "/usr/bin/lolcat",
+        "/usr/local/bin/lolcat",
+        "/bin/lolcat",
+        "/snap/bin/lolcat",
+        "/usr/games/lolcat"
+    ]
+    
+    # 用户gem路径
+    home = os.path.expanduser("~")
+    possible_paths.extend([
+        f"{home}/.local/bin/lolcat",
+        f"{home}/.gem/ruby/*/bin/lolcat",
+        f"{home}/.rbenv/shims/lolcat"
+    ])
+    
+    # 系统gem路径
+    try:
+        gem_path = subprocess.check_output(["gem", "env", "exec_prefix"], text=True).strip()
+        possible_paths.append(f"{gem_path}/bin/lolcat")
+    except:
+        pass
+    
+    # 遍历所有可能路径
+    for path in possible_paths:
+        if "*" in path:
+            matches = glob.glob(path)
+            if matches:
+                return matches[0]
+        elif os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+    
+    return None
 # 安装Lolcat
 def install_lolcat():
     print("\n正在安装Lolcat...")
     
     # 查找现有安装路径
-    existing_path = shutil.which("lolcat")
+    existing_path = find_lolcat_path()
     if existing_path:
         print(f"Lolcat 已经安装于: {existing_path}")
         return existing_path
@@ -224,8 +267,8 @@ def install_lolcat():
         elif os_id in ["alpine"]:
             subprocess.run(["apk", "add", "lolcat"], check=True)
         
-        # 检查是否安装成功
-        lolcat_path = shutil.which("lolcat")
+        # 检查路径
+        lolcat_path = find_lolcat_path()
         if lolcat_path:
             print(f"通过包管理器安装成功: {lolcat_path}")
             return lolcat_path
@@ -255,16 +298,12 @@ def install_lolcat():
             except:
                 print(f"gem安装方式 {install_method if install_method else 'system'} 失败，尝试其他方式")
         
-        # 查找安装路径
-        lolcat_path = shutil.which("lolcat")
+        # 查找路径
+        lolcat_path = find_lolcat_path()
         if lolcat_path:
             return lolcat_path
-        
-        # 如果仍然找不到，尝试在gem路径中查找
-        gem_bin_path = subprocess.check_output(["gem", "env", "executable_path"], text=True).strip()
-        lolcat_path = f"{gem_bin_path}/lolcat"
-        if os.path.exists(lolcat_path):
-            return lolcat_path
+        else:
+            print("gem安装后未找到lolcat路径")
         
     except Exception as e:
         print(f"gem安装失败: {str(e)}")
