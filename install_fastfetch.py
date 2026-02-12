@@ -150,7 +150,56 @@ def install_fastfetch():
         print(f"清理构建目录: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
 
-# 安装Lolcat (修复Ubuntu 22.04问题)
+# 从源码编译安装Lolcat
+def install_lolcat_from_source():
+    print("\n正在从源码安装Lolcat...")
+    
+    # 创建临时工作目录
+    work_dir = tempfile.mkdtemp(prefix="lolcat-build-")
+    print(f"创建临时构建目录: {work_dir}")
+    
+    try:
+        # 下载源码
+        zip_url = "https://github.com/busyloop/lolcat/archive/master.zip"
+        zip_path = f"{work_dir}/master.zip"
+        print(f"下载Lolcat源码: {zip_url}")
+        
+        # 使用urllib下载
+        with urllib.request.urlopen(zip_url) as response:
+            with open(zip_path, 'wb') as out_file:
+                shutil.copyfileobj(response, out_file)
+        
+        # 解压源码
+        print(f"解压源码: {zip_path}")
+        shutil.unpack_archive(zip_path, work_dir)
+        
+        # 进入源代码目录
+        src_dir = glob.glob(f"{work_dir}/lolcat-*")[0]
+        os.chdir(src_dir)
+        
+        # 安装依赖
+        print("安装Lolcat依赖...")
+        subprocess.run(["gem", "install", "rake"], check=True)
+        
+        # 编译并安装
+        print("编译安装Lolcat...")
+        subprocess.run(["rake", "install"], check=True)
+        
+        # 获取安装路径
+        lolcat_path = shutil.which("lolcat")
+        if not lolcat_path:
+            # 尝试在gem路径中查找
+            gem_path = subprocess.check_output(["gem", "env", "exec_prefix"], text=True).strip()
+            lolcat_path = f"{gem_path}/bin/lolcat"
+        
+        print(f"Lolcat 安装成功: {lolcat_path}")
+        return lolcat_path
+        
+    finally:
+        # 清理工作目录
+        print(f"清理构建目录: {work_dir}")
+        shutil.rmtree(work_dir, ignore_errors=True)
+# 安装Lolcat
 def install_lolcat():
     print("\n正在安装Lolcat...")
     
@@ -160,65 +209,8 @@ def install_lolcat():
         print(f"Lolcat 已经安装于: {existing_path}")
         return existing_path
     
-    # 修复Ubuntu 22.04的Ruby环境问题
-    os_id = detect_os()
-    if os_id in ["ubuntu", "debian", "pop"]:
-        print(f"在 {os_id.capitalize()} 上修复Ruby环境")
-        debian_fix_commands = [
-            "apt-get install -y --reinstall ruby ruby-dev rubygems ruby-bundler",
-            "gem environment",
-            "gem update --system --no-document",
-            "gem pristine --all"
-        ]
-        for cmd in debian_fix_commands:
-            print(f"执行: {cmd}")
-            try:
-                subprocess.run(cmd.split(), check=True)
-            except Exception as e:
-                print(f"警告: {cmd} 执行失败: {str(e)}")
-    
-    # 使用apt安装lolcat作为备选方案
+    # 尝试通过包管理器安装
     try:
-        print("尝试通过apt安装lolcat...")
-        subprocess.run(["apt-get", "install", "-y", "lolcat"], check=True)
-        lolcat_path = shutil.which("lolcat")
-        if lolcat_path:
-            print(f"通过apt安装Lolcat成功: {lolcat_path}")
-            return lolcat_path
-    except:
-        print("apt安装lolcat失败，尝试gem安装")
-    
-    # 使用gem安装
-    try:
-        print("使用 gem 安装 Lolcat")
-        # 确保在根目录下执行，避免工作目录问题
-        os.chdir("/")
-        gem_cmd = ["gem", "install", "lolcat", "--no-document", "--user-install"]
-        # 添加详细输出以便调试
-        print(f"执行: {' '.join(gem_cmd)}")
-        result = subprocess.run(gem_cmd, capture_output=True, text=True, check=False)
-        
-        if result.returncode != 0:
-            print(f"gem安装失败 (代码 {result.returncode}):")
-            print(result.stderr)
-            
-            # 尝试修复权限问题
-            print("尝试修复权限...")
-            gem_cmd = ["gem", "install", "lolcat", "--no-document"]
-            result = subprocess.run(gem_cmd, capture_output=True, text=True, check=False)
-            
-            if result.returncode != 0:
-                print(f"仍然失败 (代码 {result.returncode}):")
-                print(result.stderr)
-                # 尝试使用sudo gem安装
-                print("尝试使用sudo gem install...")
-                gem_cmd = ["sudo", "gem", "install", "lolcat", "--no-document"]
-                subprocess.run(gem_cmd, check=True)
-        else:
-            print("lolcat gem安装成功")
-    except Exception as e:
-        print(f"Gem安装失败: {str(e)}")
-        # 尝试使用系统包管理器安装
         print("尝试通过系统包管理器安装lolcat...")
         os_id = detect_os()
         if os_id in ["ubuntu", "debian", "pop"]:
@@ -227,39 +219,59 @@ def install_lolcat():
             subprocess.run(["pacman", "-S", "--noconfirm", "lolcat"], check=True)
         elif os_id in ["fedora", "centos", "rhel"]:
             subprocess.run(["dnf", "install", "-y", "lolcat"], check=True)
-        else:
-            print("错误：无法安装Lolcat")
-            sys.exit(1)
-    
-    # 查找安装路径
-    lolcat_path = shutil.which("lolcat")
-    if not lolcat_path:
-        # 尝试在用户gem目录中查找
-        home = os.path.expanduser("~")
-        possible_paths = [
-            f"{home}/.local/bin/lolcat",
-            f"{home}/.gem/ruby/*/bin/lolcat",
-            "/usr/local/bin/lolcat",
-            "/usr/bin/lolcat"
-        ]
+        elif os_id in ["opensuse"]:
+            subprocess.run(["zypper", "install", "-y", "lolcat"], check=True)
+        elif os_id in ["alpine"]:
+            subprocess.run(["apk", "add", "lolcat"], check=True)
         
-        for path in possible_paths:
-            if "*" in path:
-                import glob
-                matches = glob.glob(path)
-                if matches:
-                    lolcat_path = matches[0]
-                    break
-            elif os.path.exists(path):
-                lolcat_path = path
+        # 检查是否安装成功
+        lolcat_path = shutil.which("lolcat")
+        if lolcat_path:
+            print(f"通过包管理器安装成功: {lolcat_path}")
+            return lolcat_path
+        else:
+            print("包管理器安装后未找到lolcat，尝试其他方法")
+    except Exception as e:
+        print(f"包管理器安装失败: {str(e)}")
+    
+    # 尝试使用gem安装
+    try:
+        print("尝试使用gem安装lolcat...")
+        # 确保在根目录下执行，避免工作目录问题
+        os.chdir("/")
+        gem_env = subprocess.check_output(["gem", "env"])
+        
+        # 尝试不同安装方式
+        for install_method in ["--user-install", ""]:
+            cmd = ["gem", "install", "lolcat", "--no-document"]
+            if install_method:
+                cmd.append(install_method)
+            
+            print(f"执行: {' '.join(cmd)}")
+            try:
+                subprocess.run(cmd, check=True)
+                print("gem安装成功")
                 break
+            except:
+                print(f"gem安装方式 {install_method if install_method else 'system'} 失败，尝试其他方式")
+        
+        # 查找安装路径
+        lolcat_path = shutil.which("lolcat")
+        if lolcat_path:
+            return lolcat_path
+        
+        # 如果仍然找不到，尝试在gem路径中查找
+        gem_bin_path = subprocess.check_output(["gem", "env", "executable_path"], text=True).strip()
+        lolcat_path = f"{gem_bin_path}/lolcat"
+        if os.path.exists(lolcat_path):
+            return lolcat_path
+        
+    except Exception as e:
+        print(f"gem安装失败: {str(e)}")
     
-    if not lolcat_path:
-        print("错误：无法找到 Lolcat 安装路径")
-        sys.exit(1)
-    
-    print(f"Lolcat 安装成功: {lolcat_path}")
-    return lolcat_path
+    # 如果上述方法都失败，使用源码安装
+    print("所有其他方法失败，使用源码安装...")
+    return install_lolcat_from_source()
 # 清理旧的失效配置
 def remove_old_config():
     config_path = "/etc/profile"
@@ -358,13 +370,6 @@ def main():
         
         # 安装并获取二进制路径
         fastfetch_path = install_fastfetch()
-        
-        # 在Ubuntu/Debian上特别处理Ruby环境
-        if os_id in ["ubuntu", "debian", "pop"]:
-            print("在Ubuntu/Debian系统上，额外修复Ruby环境")
-            subprocess.run(["apt-get", "install", "-y", "--reinstall", "ruby", "ruby-dev", "rubygems", "rubygems-integration"], check=False)
-            subprocess.run(["gem", "update", "--system", "--no-document"], check=False)
-            
         lolcat_path = install_lolcat()
         
         # 验证路径有效性
@@ -379,7 +384,7 @@ def main():
         # 测试FastFetch是否能正常运行
         print("\n测试FastFetch...")
         try:
-            subprocess.run([fastfetch_path], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run([fastfetch_path, "--version"], check=True, stdout=subprocess.DEVNULL)
             print("FastFetch测试通过")
         except subprocess.CalledProcessError as e:
             print(f"FastFetch测试失败: {e.stderr.decode('utf-8') if e.stderr else '未知错误'}")
@@ -389,7 +394,7 @@ def main():
         # 测试Lolcat是否能正常运行
         print("\n测试Lolcat...")
         try:
-            test_cmd = f'echo "测试彩色输出" | {lolcat_path}'
+            test_cmd = f'echo "测试彩色输出" | {lolcat_path} --version'
             subprocess.run(test_cmd, shell=True, check=True)
             print("Lolcat测试通过")
         except Exception as e:
@@ -405,6 +410,7 @@ def main():
         print("请执行以下命令立即生效或重启终端:")
         print("  source /etc/profile")
         print("提示：可通过编辑 /etc/profile 自定义配置")
+        print("卸载提示: 要卸载配置，请编辑 /etc/profile 并删除脚本添加的配置块")
     
     except subprocess.CalledProcessError as e:
         print(f"\n错误：命令执行失败: {e.cmd}")
