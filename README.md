@@ -1,1 +1,1 @@
-# scripts
+# init_scripts
