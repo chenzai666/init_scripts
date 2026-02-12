@@ -1,194 +1,280 @@
 #!/usr/bin/env python3
 """
-Fastfetch + lolcat 自动安装 & 自动写入 shell 配置
-兼容：
-- Arch (pacman)
-- Debian / Ubuntu (apt)
-- Fedora (dnf)
-- Alpine (apk)
+Debian 11 FastFetch 安装脚本 (最终修正版)
+解决 libc6 依赖问题并使用 lolcat 彩色输出
+2024.06.08 - 修正下载链接
 """
-
 import os
-import shutil
 import subprocess
 import sys
 import platform
+import tarfile
+import tempfile
+import urllib.request
+import ssl
+import re
 
+# 创建自定义 SSL 上下文
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
-# ------------------------------
-# 基础工具函数
-# ------------------------------
-
-def run_command(cmd: list) -> bool:
-    """执行系统命令"""
+def run_command(cmd, sudo=False):
+    """运行命令并返回输出和返回码"""
     try:
-        subprocess.check_call(cmd)
+        if sudo:
+            cmd = f"sudo {cmd}"
+        result = subprocess.run(
+            cmd, shell=True, check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True
+        )
+        return result.stdout.strip(), result.returncode
+    except Exception as e:
+        print(f"❌ 命令执行失败: {str(e)}")
+        return None, -1
+
+def is_root():
+    """检查是否为 root 用户"""
+    return os.geteuid() == 0
+
+def detect_architecture():
+    """检测系统架构并映射到 FastFetch 的架构命名"""
+    arch = platform.machine().lower()
+    
+    # FastFetch 使用特定的架构命名
+    if arch in ["x86_64", "amd64"]:
+        return "x86_64", "Linux"
+    elif arch.startswith("aarch64") or arch.startswith("arm64"):
+        return "aarch64", "Linux-ARM64"
+    elif arch.startswith("armv7") or arch.startswith("armhf"):
+        return "armv7", "Linux-ARMHF"
+    else:
+        return arch, "Unknown"
+
+def install_lolcat():
+    """安装 lolcat"""
+    print("\n🌈 安装 lolcat...")
+    
+    # 检查是否已安装
+    output, code = run_command("which lolcat")
+    if code == 0 and output:
+        print("✅ lolcat 已安装")
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ 命令执行失败: {' '.join(cmd)}")
-        print(f"错误: {e}")
-        return False
+    
+    # 安装 Ruby 和 gem
+    _, code = run_command("apt install -y ruby ruby-dev", sudo=True)
+    if code != 0:
+        print("⚠️ Ruby 安装失败，尝试继续安装 lolcat...")
+    
+    # 尝试使用 gem 安装
+    print("🔄 尝试 gem 安装...")
+    output, code = run_command("gem install lolcat", sudo=True)
+    if code == 0:
+        print("✅ lolcat 安装成功")
+        return True
+    
+    print("⚠️ lolcat 安装失败，将使用普通输出")
+    return False
 
+def fix_dependencies():
+    """修复依赖关系问题"""
+    print("\n🔧 修复系统依赖...")
+    
+    # 尝试修复损坏的依赖
+    run_command("apt --fix-broken install -y", sudo=True)
+    
+    # 安装基本依赖
+    print("\n📦 安装基本依赖...")
+    run_command("apt update", sudo=True)
+    run_command("apt install -y wget tar git", sudo=True)
 
-def command_exists(cmd: str) -> bool:
-    """判断命令是否存在（不依赖 which）"""
-    return shutil.which(cmd) is not None
-
-
-def get_real_path(cmd: str) -> str | None:
-    """获取命令真实路径"""
-    path = shutil.which(cmd)
-    if path:
-        return os.path.realpath(path)
+def download_fastfetch(arch_name, release_name, version):
+    """下载 FastFetch 并返回文件路径"""
+    # 正确的文件名格式
+    filename = f"fastfetch-{version}-{release_name}.tar.gz"
+    download_url = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{version}/{filename}"
+    
+    # 创建临时目录
+    tmp_dir = tempfile.mkdtemp()
+    tar_path = os.path.join(tmp_dir, filename)
+    
+    print(f"\n📥 下载 FastFetch {version} [{release_name}]...")
+    print(f"   URL: {download_url}")
+    
+    try:
+        # 尝试使用 urllib 下载
+        with urllib.request.urlopen(download_url, context=ssl_context) as response:
+            with open(tar_path, 'wb') as f:
+                f.write(response.read())
+        print("✅ 下载完成")
+        return tar_path
+    except Exception as e:
+        print(f"❌ urllib 下载失败: {str(e)}")
+    
+    # 备选下载方式 - 使用 wget
+    print("\n🔄 尝试 wget 下载...")
+    wget_cmd = f"wget --no-check-certificate -O '{tar_path}' '{download_url}'"
+    output, code = run_command(wget_cmd, sudo=False)
+    
+    if code == 0 and os.path.exists(tar_path) and os.path.getsize(tar_path) > 10240:  # 10KB
+        print("✅ wget 下载成功")
+        return tar_path
+    
+    print(f"❌ wget 下载失败 (状态码: {code})")
+    print(f"   输出: {output[:200]}" if output else "")
     return None
 
-
-# ------------------------------
-# 包管理器检测
-# ------------------------------
-
-def detect_package_manager() -> str | None:
-    if command_exists("pacman"):
-        return "pacman"
-    elif command_exists("apt"):
-        return "apt"
-    elif command_exists("dnf"):
-        return "dnf"
-    elif command_exists("apk"):
-        return "apk"
-    else:
-        return None
-
-
-def install_package(pkg_manager: str, package_name: str) -> bool:
-    print(f"📦 使用 {pkg_manager} 安装 {package_name}...")
-
-    if pkg_manager == "pacman":
-        return run_command(["sudo", "pacman", "-Sy", "--noconfirm", package_name])
-
-    elif pkg_manager == "apt":
-        run_command(["sudo", "apt", "update"])
-        return run_command(["sudo", "apt", "install", "-y", package_name])
-
-    elif pkg_manager == "dnf":
-        return run_command(["sudo", "dnf", "install", "-y", package_name])
-
-    elif pkg_manager == "apk":
-        return run_command(["sudo", "apk", "add", package_name])
-
-    return False
-
-
-def ensure_installed(pkg_manager: str, package_name: str) -> bool:
-    print(f"🔍 检查 {package_name} 是否已安装...")
-
-    if command_exists(package_name):
-        print(f"✅ {package_name} 已安装")
-        return True
-
-    print(f"📦 {package_name} 未安装，开始安装...")
-    success = install_package(pkg_manager, package_name)
-
-    if success and command_exists(package_name):
-        print(f"✅ {package_name} 安装成功")
-        return True
-
-    print(f"❌ {package_name} 安装失败")
-    return False
-
-
-# ------------------------------
-# 写入 Shell 配置
-# ------------------------------
-
-def write_system_profile(fastfetch_path: str, lolcat_path: str):
-    profile_file = "/etc/profile"
-    start_marker = "# >>> init_fastfetch_start >>>"
-    end_marker = "# <<< init_fastfetch_end <<<"
-
-    new_block = (
-        f"\n{start_marker}\n"
-        f"{fastfetch_path} | {lolcat_path}\n"
-        f"{end_marker}\n"
-    )
-
-    # 读取现有内容
-    if os.path.exists(profile_file):
-        with open(profile_file, "r") as f:
-            content = f.read()
-    else:
-        content = ""
-
-    # 删除旧标记块
-    if start_marker in content and end_marker in content:
-        import re
-        pattern = re.compile(f"{start_marker}.*?{end_marker}", re.DOTALL)
-        content = pattern.sub("", content)
-        print("🧹 已删除旧的 fastfetch 配置块")
-
-    # 额外清理旧版本（没有标记的旧写法）
-    lines = content.splitlines()
-    cleaned_lines = [
-        line for line in lines
-        if "fastfetch" not in line and "lolcat" not in line
-    ]
-    cleaned_content = "\n".join(cleaned_lines)
-
-    # 重新写入 /etc/profile，需要 sudo
+def install_fastfetch():
+    """安装 FastFetch"""
+    if not is_root():
+        print("❌ 请使用 sudo 或以 root 用户运行此脚本")
+        sys.exit(1)
+    
+    print("🚀 Debian 11 FastFetch 安装程序 (最终修正版)")
+    print("=" * 50)
+    
+    # 修复依赖问题
+    fix_dependencies()
+    
+    # 安装 lolcat
+    lolcat_installed = install_lolcat()
+    
+    # 获取系统架构
+    arch, release_name = detect_architecture()
+    print(f"🔍 检测到系统架构: {arch} → {release_name}")
+    
+    if release_name == "Unknown":
+        print(f"❌ 不支持的架构: {arch}")
+        sys.exit(1)
+    
+    # FastFetch 版本
+    version = "2.58.0"
+    
+    # 下载 FastFetch
+    tar_path = download_fastfetch(arch, release_name, version)
+    if not tar_path:
+        print("❌ 下载失败，无法继续安装")
+        sys.exit(1)
+    
+    # 解压文件
+    print("\n📂 解压文件...")
+    tmp_dir = os.path.dirname(tar_path)
     try:
-        import tempfile
-        tmpfile = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        tmpfile.write(cleaned_content.strip() + "\n" + new_block)
-        tmpfile.close()
-        run_command(["mv", tmpfile.name, profile_file])
-        print(f"✅ 已更新系统配置文件: {profile_file}")
+        with tarfile.open(tar_path, "r:gz") as tar:
+            tar.extractall(path=tmp_dir)
+        print("✅ 解压完成")
     except Exception as e:
-        print(f"❌ 写入 {profile_file} 失败: {e}")
-
-
-
-
-# ------------------------------
-# 主程序
-# ------------------------------
-
-def main():
-    print("📌 正在检测系统信息...")
-    print(f"系统: {platform.platform()}")
-
-    pkg_manager = detect_package_manager()
-
-    if not pkg_manager:
-        print("❌ 未检测到支持的包管理器")
+        print(f"❌ 解压失败: {str(e)}")
         sys.exit(1)
-
-    print(f"📦 检测到包管理器: {pkg_manager}")
-
-    # 强制安装 fastfetch
-    if not ensure_installed(pkg_manager, "fastfetch"):
+    
+    # 查找二进制文件
+    bin_path = None
+    for root, dirs, files in os.walk(tmp_dir):
+        if "fastfetch" in files:
+            bin_path = os.path.join(root, "fastfetch")
+            break
+    
+    if not bin_path:
+        print("❌ 找不到 fastfetch 可执行文件")
+        print("   尝试在解压目录中查找...")
         sys.exit(1)
-
-    # 强制安装 lolcat
-    if not ensure_installed(pkg_manager, "lolcat"):
+    
+    print(f"🔍 找到可执行文件: {bin_path}")
+    
+    # 安装到系统
+    print("\n🚀 安装到系统目录...")
+    install_dir = "/usr/local/bin"
+    dest_path = os.path.join(install_dir, "fastfetch")
+    
+    try:
+        # 确保目录存在
+        os.makedirs(install_dir, exist_ok=True)
+        
+        # 复制文件
+        cmd = f"cp '{bin_path}' '{dest_path}' && chmod 755 '{dest_path}'"
+        output, code = run_command(cmd, sudo=True)
+        
+        if code == 0:
+            print(f"✅ 安装完成: {dest_path}")
+        else:
+            print(f"❌ 安装失败 (状态码: {code})")
+            print(f"   输出: {output[:200]}" if output else "")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ 安装失败: {str(e)}")
         sys.exit(1)
-
-    # 获取真实路径
-    fastfetch_path = get_real_path("fastfetch")
-    lolcat_path = get_real_path("lolcat")
-
-    if not fastfetch_path or not lolcat_path:
-        print("❌ 无法获取程序真实路径")
+    
+    # 验证安装
+    print("\n🔍 验证安装...")
+    output, code = run_command("fastfetch --version")
+    if code == 0 and output:
+        version_line = output.splitlines()[0] if output else "unknown"
+        print(f"✅ FastFetch 安装成功: {version_line}")
+    else:
+        print("❌ FastFetch 验证失败")
         sys.exit(1)
-
-    print(f"📍 fastfetch 路径: {fastfetch_path}")
-    print(f"📍 lolcat 路径: {lolcat_path}")
-
-    # 写入 shell 配置
-    write_system_profile(fastfetch_path, lolcat_path)
-
-    print("\n🎉 安装与配置完成！")
-    print("请重新打开终端生效。")
-
+    
+    # 添加到 /etc/profile
+    print("\n⚙️ 配置全局自动启动...")
+    config_script = """
+# 自动运行 FastFetch (由安装脚本添加)
+if [ -n "$SSH_CONNECTION" ]; then
+    if command -v fastfetch >/dev/null 2>&1; then
+        # 使用 lolcat 输出彩色效果
+        if command -v lolcat >/dev/null 2>&1; then
+            fastfetch | lolcat
+        else
+            fastfetch
+        fi
+    fi
+fi
+"""
+    
+    profile_path = "/etc/profile"
+    try:
+        # 检查是否已存在配置
+        with open(profile_path, "r") as f:
+            content = f.read()
+            if "fastfetch" in content:
+                print("ℹ️ 配置已存在于 /etc/profile")
+            else:
+                # 添加配置
+                with open(profile_path, "a") as f:
+                    f.write("\n" + config_script)
+                print(f"✅ 已添加到 {profile_path}")
+                print("   配置将在下次登录时生效")
+    except Exception as e:
+        print(f"❌ 写入配置文件失败: {str(e)}")
+    
+    # 创建测试命令
+    test_script = """#!/bin/bash
+if command -v fastfetch >/dev/null 2>&1; then
+    if command -v lolcat >/dev/null 2>&1; then
+        fastfetch | lolcat
+    else
+        fastfetch
+    fi
+fi
+"""
+    test_path = "/usr/local/bin/test-fetch"
+    try:
+        with open(test_path, "w") as f:
+            f.write(test_script)
+        run_command(f"chmod +x {test_path}", sudo=True)
+        print(f"✅ 创建测试命令: test-fetch")
+    except Exception as e:
+        print(f"⚠️ 创建测试命令失败: {str(e)}")
+    
+    print("\n" + "=" * 50)
+    print("🎉 安装成功！")
+    print(f"💡 FastFetch 已安装在 {dest_path}")
+    print(f"⚙️  配置已添加到 {profile_path}")
+    print(f"🌈  lolcat 状态: {'已安装' if lolcat_installed else '未安装'}")
+    print("\n👉 您可以立即测试:")
+    print("   test-fetch")
+    print("\n👉 下次 SSH 登录时将自动显示系统信息")
+    print("✨ 享受炫酷的系统信息展示吧！")
 
 if __name__ == "__main__":
-    main()
+    install_fastfetch()
