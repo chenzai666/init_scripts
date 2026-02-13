@@ -72,7 +72,7 @@ cat > /etc/mail.rc <<EOF
 set from=18827262495@163.com
 set smtp=smtp.163.com
 set smtp-auth-user=18827262495@163.com
-set smtp-auth-password=FNIYSDOEMBBMWXWR
+set smtp-auth-password=NLYG9iZ65chC4M4q
 EOF
 systemctl restart postfix
 if [ $? -eq 0 ];then
