@@ -568,6 +568,68 @@ Debian_neofetch(){
 	fi
 }
 
+alpine-fetch(){
+#!/bin/sh
+
+# 安装脚本 - Alpine Fetch Auto Installer
+# 版本: 1.2
+# GitHub: https://github.com/yourusername/alpine-fetch
+
+# 检查 root 权限
+if [ "$(id -u)" -ne 0 ]; then
+    echo "需要 root 权限运行此安装脚本"
+    echo "请使用 sudo 或切换到 root 用户后重试"
+    exit 1
+fi
+
+# 定义下载 URL
+FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/alpine-fetch"
+INSTALL_PATH="/usr/local/bin/alpine-fetch"
+
+# 安装依赖
+echo "安装必要依赖..."
+apk add --no-cache curl bash figlet util-linux procps coreutils > /dev/null 2>&1
+
+# 下载脚本
+echo "下载 Alpine Fetch 脚本..."
+if curl -sSL "$FETCH_URL" -o "$INSTALL_PATH"; then
+    echo "下载成功: $INSTALL_PATH"
+else
+    echo "下载失败，请检查网络连接"
+    exit 1
+fi
+
+# 设置执行权限
+chmod +x "$INSTALL_PATH"
+echo "设置执行权限: $INSTALL_PATH"
+
+# 添加到 /etc/profile
+PROFILE_HOOK="# Alpine Fetch Hook
+if [ -x /usr/local/bin/alpine-fetch ]; then
+    if [ \"\$(tty)\" = \"/dev/console\" ] || [ -n \"\$SSH_TTY\" ]; then
+        /usr/local/bin/alpine-fetch
+    fi
+fi"
+
+# 检查是否已添加
+if ! grep -q "Alpine Fetch Hook" /etc/profile; then
+    echo "添加到 /etc/profile..."
+    echo "$PROFILE_HOOK" >> /etc/profile
+else
+    echo "检测到已在 /etc/profile 中存在，跳过添加"
+fi
+
+# 测试运行
+echo -e "\n安装完成！测试运行...\n"
+sleep 2
+/usr/local/bin/alpine-fetch
+
+# 完成信息
+echo -e "\n\e[32m✅ Alpine Fetch 已成功安装！"
+echo "此工具将在每次登录时自动显示系统信息"
+echo -e "当前用户下次登录时即可生效\e[0m\n"
+}
+
 install_fastfetch(){
 # ===================== 配置项（可根据你的 GitHub 仓库修改） =====================
 # GitHub 上 Python 脚本的原始文件地址
@@ -757,9 +819,10 @@ start_menu(){
 	 blue " 19.配置Ubuntu的neofetch"
 	 blue " 20.配置Debian的neofetch"
 	 blue " 21.自适应配置fastfetch"
-	 blue " 22.建议安装软件包"
-	 blue " 23.一键更换仓库源"
-	 blue " 24.一键安装docker"
+	 blue " 22.配置alpine-fetch"
+	 blue " 23.建议安装软件包"
+	 blue " 24.一键更换仓库源"
+	 blue " 25.一键安装docker"
 	 yellow " ========================================================== "
      red " 0. 退出脚本"
     echo
@@ -851,13 +914,17 @@ case $num in
 	green "fastfetch已配置完成!"
 	;;
 22)
+	alpine-fetch
+	green "alpine-fetch已配置完成!"
+	;;
+23)
     minimal_install
     green "建议安装软件包已安装完成!"
     ;;
-23)
+24)
     Choice_change
     ;;
-24)
+25)
     Install_Docker
     ;;
 0)
