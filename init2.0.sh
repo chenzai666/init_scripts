@@ -588,7 +588,19 @@ INSTALL_PATH="/usr/local/bin/alpine_arch-fetch"
 
 # 安装依赖
 echo "安装必要依赖..."
-apk add --no-cache curl bash figlet util-linux procps coreutils > /dev/null 2>&1
+# 检测系统类型并安装依赖
+if [ -f /etc/arch-release ]; then
+    # Arch Linux 系统
+    echo "检测到 Arch Linux 系统，使用 pacman 安装依赖..."
+    pacman -S --noconfirm curl bash figlet util-linux procps-ng coreutils > /dev/null 2>&1
+elif command -v apk &> /dev/null; then
+    # Alpine Linux 系统
+    echo "检测到 Alpine Linux 系统，使用 apk 安装依赖..."
+    apk add --no-cache curl bash figlet util-linux procps coreutils > /dev/null 2>&1
+else
+    echo "错误: 不支持的系统类型"
+    exit 1
+fi
 
 # 下载脚本
 echo "下载 Alpine Fetch 脚本..."
