@@ -568,12 +568,12 @@ Debian_neofetch(){
 	fi
 }
 
-alpine-fetch(){
+alpine_arch-fetch(){
 #!/bin/sh
 
 # 安装脚本 - Alpine Fetch Auto Installer
 # 版本: 1.2
-# GitHub: https://github.com/yourusername/alpine-fetch
+# GitHub: https://github.com/yourusername/alpine_arch-fetch
 
 # 检查 root 权限
 if [ "$(id -u)" -ne 0 ]; then
@@ -583,8 +583,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 定义下载 URL
-FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/alpine-fetch"
-INSTALL_PATH="/usr/local/bin/alpine-fetch"
+FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/alpine_arch-fetch"
+INSTALL_PATH="/usr/local/bin/alpine_arch-fetch"
 
 # 安装依赖
 echo "安装必要依赖..."
@@ -605,9 +605,9 @@ echo "设置执行权限: $INSTALL_PATH"
 
 # 添加到 /etc/profile
 PROFILE_HOOK="# Alpine Fetch Hook
-if [ -x /usr/local/bin/alpine-fetch ]; then
+if [ -x /usr/local/bin/alpine_arch-fetch ]; then
     if [ \"\$(tty)\" = \"/dev/console\" ] || [ -n \"\$SSH_TTY\" ]; then
-        /usr/local/bin/alpine-fetch
+        /usr/local/bin/alpine_arch-fetch
     fi
 fi"
 
@@ -622,7 +622,7 @@ fi
 # 测试运行
 echo -e "\n安装完成！测试运行...\n"
 sleep 2
-/usr/local/bin/alpine-fetch
+/usr/local/bin/alpine_arch-fetch
 
 # 完成信息
 echo -e "\n\e[32m✅ Alpine Fetch 已成功安装！"
@@ -819,7 +819,7 @@ start_menu(){
 	 blue " 19.配置Ubuntu的neofetch"
 	 blue " 20.配置Debian的neofetch"
 	 blue " 21.自适应配置fastfetch"
-	 blue " 22.配置alpine-fetch"
+	 blue " 22.配置alpine_arch-fetch"
 	 blue " 23.建议安装软件包"
 	 blue " 24.一键更换仓库源"
 	 blue " 25.一键安装docker"
@@ -914,8 +914,8 @@ case $num in
 	green "fastfetch已配置完成!"
 	;;
 22)
-	alpine-fetch
-	green "alpine-fetch已配置完成!"
+	alpine_arch-fetch
+	green "alpine_arch-fetch已配置完成!"
 	;;
 23)
     minimal_install
