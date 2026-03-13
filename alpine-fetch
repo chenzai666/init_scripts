@@ -1,14 +1,59 @@
 #!/bin/bash
 
+# 检测系统类型
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "$ID"
+    elif [ -f /etc/arch-release ]; then
+        echo "arch"
+    elif [ -f /etc/alpine-release ]; then
+        echo "alpine"
+    else
+        echo "unknown"
+    fi
+}
+
+DISTRO=$(detect_distro)
+
+# 根据系统类型设置包管理器
+get_package_manager() {
+    case "$DISTRO" in
+        arch|manjaro)
+            echo "pacman"
+            ;;
+        alpine)
+            echo "apk"
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
 # 检查并安装缺失的命令
 ensure_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
         if [ "$(id -u)" -eq 0 ]; then
             echo "正在安装缺失的命令: $1"
-            apk add --no-cache "$2" >/dev/null 2>&1 || {
-                echo "安装失败: $1"
-                return 1
-            }
+            case "$DISTRO" in
+                arch|manjaro)
+                    pacman -S --noconfirm "$2" >/dev/null 2>&1 || {
+                        echo "安装失败: $1"
+                        return 1
+                    }
+                    ;;
+                alpine)
+                    apk add --no-cache "$2" >/dev/null 2>&1 || {
+                        echo "安装失败: $1"
+                        return 1
+                    }
+                    ;;
+                *)
+                    echo "不支持的系统类型"
+                    return 1
+                    ;;
+            esac
         else
             echo "需要管理员权限安装: $1"
             return 1
@@ -17,11 +62,27 @@ ensure_command() {
     return 0
 }
 
+# 根据系统设置包名
+case "$DISTRO" in
+    arch|manjaro)
+        PROCS_PKG="procps-ng"
+        PKG_MANAGER="pacman"
+        ;;
+    alpine)
+        PROCS_PKG="procps"
+        PKG_MANAGER="apk"
+        ;;
+    *)
+        echo "不支持的系统类型: $DISTRO"
+        exit 1
+        ;;
+esac
+
 # 确保必要命令存在
 ensure_command "bash" "bash"
 ensure_command "figlet" "figlet"
 ensure_command "lscpu" "util-linux"
-ensure_command "free" "procps"
+ensure_command "free" "$PROCS_PKG"
 ensure_command "df" "coreutils" >/dev/null 2>&1
 
 # 获取系统信息
@@ -36,11 +97,65 @@ USER=$(whoami)
 SHELL=$(basename "$SHELL")
 TIME=$(date "+%Y-%m-%d %H:%M:%S")
 
+# 获取桌面环境（如果存在）
+DESKTOP=""
+if [ -n "$XDG_CURRENT_DESKTOP" ]; then
+    DESKTOP="$XDG_CURRENT_DESKTOP"
+elif [ -n "$DESKTOP_SESSION" ]; then
+    DESKTOP="$DESKTOP_SESSION"
+fi
+
+# 获取包管理器信息
+PACKAGES=""
+case "$DISTRO" in
+    arch|manjaro)
+        PACKAGES=$(pacman -Q | wc -l)
+        PKG_DISPLAY="$PACKAGES (pacman)"
+        ;;
+    alpine)
+        if command -v apk >/dev/null 2>&1; then
+            PACKAGES=$(apk info | wc -l)
+            PKG_DISPLAY="$PACKAGES (apk)"
+        fi
+        ;;
+esac
+
 # 清屏
 clear
 
-# 显示 Alpine 的 ASCII logo
-figlet "Alpine Linux" 2>/dev/null || echo -e "\n\e[1;36mAlpine Linux\e[0m\n"
+# 根据系统显示不同的 ASCII logo
+case "$DISTRO" in
+    arch|manjaro)
+        echo -e "\e[1;36m"
+        cat << "EOF"
+                   -`                
+                  .o+`               
+                 `ooo/               
+                `+oooo:              
+               `+oooooo:             
+               -+oooooo+:            
+             `/:-:++oooo+:           
+            `/++++/+++++++:          
+           `/++++++++++++++:         
+          `/+++ooooooooooooo/`       
+         ./ooosssso++osssssso+`      
+        .oossssso-````/ossssss+`     
+       -osssssso.      :ssssssso.    
+      :osssssss/        osssso+++.   
+     /ossssssss/        +ssssooo/-   
+   `/ossssso+/:-        -:/+osssso+- 
+  `+sso+:-`                 `.-/+oso:
+ `++:.                           `-/+/
+ .`                                 `/
+EOF
+        echo -e "\e[0m"
+        DISTRO_NAME="Arch Linux"
+        ;;
+    alpine)
+        figlet "Alpine Linux" 2>/dev/null || echo -e "\n\e[1;36mAlpine Linux\e[0m\n"
+        DISTRO_NAME="Alpine Linux"
+        ;;
+esac
 
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
 echo -e "\e[1;32m    🌐  System Information\e[0m"
@@ -56,10 +171,12 @@ echo -e "\e[1;33mDisk Usage: \e[1;37m$DISK"
 echo -e "\e[1;33mCPU: \e[1;37m$CPU"
 echo -e "\e[1;33mUser: \e[1;37m$USER"
 echo -e "\e[1;33mShell: \e[1;37m$SHELL"
+[ -n "$DESKTOP" ] && echo -e "\e[1;33mDesktop: \e[1;37m$DESKTOP"
+[ -n "$PACKAGES" ] && echo -e "\e[1;33mPackages: \e[1;37m$PKG_DISPLAY"
 echo -e "\e[1;33mTime: \e[1;37m$TIME"
 echo -e "\n"
 
 # 图形化分隔符
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
-echo -e "\e[1;33m🌱 Enjoy your terminal session! 🌱\e[0m"
+echo -e "\e[1;33m🌱 Enjoy your $DISTRO_NAME session! 🌱\e[0m"
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
