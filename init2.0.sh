@@ -837,7 +837,7 @@ start_menu(){
 	 blue " 19.配置Ubuntu的neofetch"
 	 blue " 20.配置Debian的neofetch"
 	 blue " 21.自适应配置fastfetch"
-	 blue " 22.配置alpine_arch-fetch"
+	 blue " 22.自适应配置AutoFetch"
 	 blue " 23.建议安装软件包"
 	 blue " 24.一键更换仓库源"
 	 blue " 25.一键安装docker"
