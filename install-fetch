@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # 检测系统类型
 detect_distro() {
     if [ -f /etc/os-release ]; then
@@ -9,13 +8,13 @@ detect_distro() {
         echo "arch"
     elif [ -f /etc/alpine-release ]; then
         echo "alpine"
+    elif [ -f /etc/debian_version ]; then
+        echo "debian"
     else
         echo "unknown"
     fi
 }
-
 DISTRO=$(detect_distro)
-
 # 根据系统类型设置包管理器
 get_package_manager() {
     case "$DISTRO" in
@@ -25,12 +24,14 @@ get_package_manager() {
         alpine)
             echo "apk"
             ;;
+        debian|ubuntu)
+            echo "apt"
+            ;;
         *)
             echo "unknown"
             ;;
     esac
 }
-
 # 检查并安装缺失的命令
 ensure_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -49,6 +50,12 @@ ensure_command() {
                         return 1
                     }
                     ;;
+                debian|ubuntu)
+                    apt update >/dev/null 2>&1 && apt install -y "$2" >/dev/null 2>&1 || {
+                        echo "安装失败: $1"
+                        return 1
+                    }
+                    ;;
                 *)
                     echo "不支持的系统类型"
                     return 1
@@ -61,7 +68,6 @@ ensure_command() {
     fi
     return 0
 }
-
 # 根据系统设置包名
 case "$DISTRO" in
     arch|manjaro)
@@ -72,19 +78,21 @@ case "$DISTRO" in
         PROCS_PKG="procps"
         PKG_MANAGER="apk"
         ;;
+    debian|ubuntu)
+        PROCS_PKG="procps"
+        PKG_MANAGER="apt"
+        ;;
     *)
         echo "不支持的系统类型: $DISTRO"
         exit 1
         ;;
 esac
-
 # 确保必要命令存在
 ensure_command "bash" "bash"
 ensure_command "figlet" "figlet"
 ensure_command "lscpu" "util-linux"
 ensure_command "free" "$PROCS_PKG"
 ensure_command "df" "coreutils" >/dev/null 2>&1
-
 # 获取系统信息
 HOSTNAME=$(hostname)
 KERNEL=$(uname -r)
@@ -96,7 +104,6 @@ CPU=$(lscpu 2>/dev/null | awk -F: '/Model name/ {print $2}' | xargs | sed 's/(R)
 USER=$(whoami)
 SHELL=$(basename "$SHELL")
 TIME=$(date "+%Y-%m-%d %H:%M:%S")
-
 # 获取桌面环境（如果存在）
 DESKTOP=""
 if [ -n "$XDG_CURRENT_DESKTOP" ]; then
@@ -104,7 +111,6 @@ if [ -n "$XDG_CURRENT_DESKTOP" ]; then
 elif [ -n "$DESKTOP_SESSION" ]; then
     DESKTOP="$DESKTOP_SESSION"
 fi
-
 # 获取包管理器信息
 PACKAGES=""
 case "$DISTRO" in
@@ -118,11 +124,15 @@ case "$DISTRO" in
             PKG_DISPLAY="$PACKAGES (apk)"
         fi
         ;;
+    debian|ubuntu)
+        if command -v dpkg >/dev/null 2>&1; then
+            PACKAGES=$(dpkg -l | grep -c '^ii')
+            PKG_DISPLAY="$PACKAGES (dpkg)"
+        fi
+        ;;
 esac
-
 # 清屏
 clear
-
 # 根据系统显示不同的 ASCII logo
 case "$DISTRO" in
     arch|manjaro)
@@ -155,13 +165,37 @@ EOF
         figlet "Alpine Linux" 2>/dev/null || echo -e "\n\e[1;36mAlpine Linux\e[0m\n"
         DISTRO_NAME="Alpine Linux"
         ;;
+    debian|ubuntu)
+        echo -e "\e[1;31m"
+        cat << "EOF"
+       _,met$$$$$gg.          
+    ,g$$$$$$$$$$$$$$$P.       
+  ,g$$P"     """Y$$.".        
+ ,$$P'              `$$$.     
+',$$P       ,ggs.     `$$b:   
+`d$$'     ,$P"'   .    $$$    
+ $$P      d$'     ,    $$P   
+ $$:      $$.   -    ,d$$'   
+ $$;      Y$b._   _,d$P'     
+ Y$$.    `.`"Y$$$$P"'         
+ `$$.      Y$$
+   `$$      `$$.
+    `$$       `$$.
+      `$       `$.
+EOF
+        echo -e "\e[0m"
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            DISTRO_NAME="$PRETTY_NAME"
+        else
+            DISTRO_NAME="Debian Linux"
+        fi
+        ;;
 esac
-
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
 echo -e "\e[1;32m    🌐  System Information\e[0m"
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
 echo -e "\n"
-
 # 信息显示
 echo -e "\e[1;33mHostname: \e[1;37m$HOSTNAME"
 echo -e "\e[1;33mKernel: \e[1;37m$KERNEL"
@@ -175,7 +209,6 @@ echo -e "\e[1;33mShell: \e[1;37m$SHELL"
 [ -n "$PACKAGES" ] && echo -e "\e[1;33mPackages: \e[1;37m$PKG_DISPLAY"
 echo -e "\e[1;33mTime: \e[1;37m$TIME"
 echo -e "\n"
-
 # 图形化分隔符
 echo -e "\e[1;34m════════════════════════════════════════════════\e[0m"
 echo -e "\e[1;33m🌱 Enjoy your $DISTRO_NAME session! 🌱\e[0m"
