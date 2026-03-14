@@ -568,12 +568,12 @@ Debian_neofetch(){
 	fi
 }
 
-alpine_arch-fetch(){
+AutoFetch(){
 #!/bin/sh
 
-# 安装脚本 - Alpine Fetch Auto Installer
+# 安装脚本 - AutoFetch Auto Installer
 # 版本: 1.2
-# GitHub: https://github.com/yourusername/alpine_arch-fetch
+# GitHub: https://github.com/yourusername/AutoFetch
 
 # 检查 root 权限
 if [ "$(id -u)" -ne 0 ]; then
@@ -583,8 +583,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 定义下载 URL
-FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/alpine_arch-fetch"
-INSTALL_PATH="/usr/local/bin/alpine_arch-fetch"
+FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/AutoFetch"
+INSTALL_PATH="/usr/local/bin/AutoFetch"
 
 # 安装依赖
 echo "安装必要依赖..."
@@ -597,13 +597,19 @@ elif command -v apk &> /dev/null; then
     # Alpine Linux 系统
     echo "检测到 Alpine Linux 系统，使用 apk 安装依赖..."
     apk add --no-cache curl bash figlet util-linux procps coreutils > /dev/null 2>&1
+elif command -v apt &> /dev/null; then
+    # Debian/Ubuntu 系统
+    echo "检测到 Debian/Ubuntu 系统，使用 apt 安装依赖..."
+    apt update > /dev/null 2>&1
+    apt install -y curl bash figlet util-linux procps coreutils > /dev/null 2>&1
 else
     echo "错误: 不支持的系统类型"
     exit 1
 fi
 
+
 # 下载脚本
-echo "下载 Alpine Fetch 脚本..."
+echo "下载 AutoFetch 脚本..."
 if curl -sSL "$FETCH_URL" -o "$INSTALL_PATH"; then
     echo "下载成功: $INSTALL_PATH"
 else
@@ -616,15 +622,15 @@ chmod +x "$INSTALL_PATH"
 echo "设置执行权限: $INSTALL_PATH"
 
 # 添加到 /etc/profile
-PROFILE_HOOK="# Alpine Fetch Hook
-if [ -x /usr/local/bin/alpine_arch-fetch ]; then
+PROFILE_HOOK="# AutoFetch Hook
+if [ -x /usr/local/bin/AutoFetch ]; then
     if [ \"\$(tty)\" = \"/dev/console\" ] || [ -n \"\$SSH_TTY\" ]; then
-        /usr/local/bin/alpine_arch-fetch
+        /usr/local/bin/AutoFetch
     fi
 fi"
 
 # 检查是否已添加
-if ! grep -q "Alpine Fetch Hook" /etc/profile; then
+if ! grep -q "AutoFetch Hook" /etc/profile; then
     echo "添加到 /etc/profile..."
     echo "$PROFILE_HOOK" >> /etc/profile
 else
@@ -634,10 +640,10 @@ fi
 # 测试运行
 echo -e "\n安装完成！测试运行...\n"
 sleep 2
-/usr/local/bin/alpine_arch-fetch
+/usr/local/bin/AutoFetch
 
 # 完成信息
-echo -e "\n\e[32m✅ Alpine Fetch 已成功安装！"
+echo -e "\n\e[32m✅ AutoFetch 已成功安装！"
 echo "此工具将在每次登录时自动显示系统信息"
 echo -e "当前用户下次登录时即可生效\e[0m\n"
 }
@@ -926,8 +932,8 @@ case $num in
 	green "fastfetch已配置完成!"
 	;;
 22)
-	alpine_arch-fetch
-	green "alpine_arch-fetch已配置完成!"
+	AutoFetch
+	green "AutoFetch已配置完成!"
 	;;
 23)
     minimal_install
