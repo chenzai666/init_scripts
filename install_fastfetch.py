@@ -8,6 +8,9 @@ import shutil
 import tempfile
 import urllib.request
 
+FASTFETCH_VERSION = os.environ.get("FASTFETCH_VERSION", "2.65.1")
+MIN_SOURCE_BUILD_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_SOURCE_BUILD_SPACE_MB", "900"))
+
 # 检查root权限
 def check_root():
     if os.geteuid() != 0:
@@ -36,7 +39,7 @@ def detect_os():
     return os_id
 
 # 安装依赖
-def install_packages(os_id):
+def get_package_config(os_id):
     package_managers = {
         "debian": "apt-get install -y",
         "ubuntu": "apt-get install -y",
@@ -94,45 +97,135 @@ def install_packages(os_id):
         "alpine": ["ruby", "ruby-dev", "ruby-rake"]
     }
 
-    packages = {
-        "base": ["curl", "git"] + compiler_packages.get(os_id, []),
+    return package_managers, {
+        "base": ["curl"],
+        "build": ["git"] + compiler_packages.get(os_id, []),
         "fastfetch": fastfetch_packages_by_os.get(os_id, []),
         "lolcat": lolcat_packages_by_os.get(os_id, [])
     }
 
+def run_package_install(os_id, packages, label):
+    package_managers, _ = get_package_config(os_id)
     # 选择正确的包管理器
     if os_id not in package_managers:
         print(f"不支持的发行版: {os_id}")
         sys.exit(1)
-    
+
+    if not packages:
+        return
+
     cmd = package_managers[os_id]
-    
-    # 安装基础依赖
-    base_packages = " ".join(packages['base'])
-    print(f"安装基础依赖: {base_packages}")
-    subprocess.run(f"{cmd} {base_packages}".split(), check=True, stderr=subprocess.PIPE)
-    
-    # 安装FastFetch依赖
-    fastfetch_packages = " ".join(packages['fastfetch'])
-    print(f"安装FastFetch依赖: {fastfetch_packages}")
-    subprocess.run(f"{cmd} {fastfetch_packages}".split(), check=True, stderr=subprocess.PIPE)
+    package_text = " ".join(packages)
+    print(f"安装{label}: {package_text}")
+    subprocess.run(f"{cmd} {package_text}".split(), check=True, stderr=subprocess.PIPE)
+
+def install_packages(os_id):
+    _, packages = get_package_config(os_id)
+    run_package_install(os_id, packages["base"], "基础依赖")
 
     # 安装Lolcat依赖
     if packages['lolcat']:
-        lolcat_packages = " ".join(packages['lolcat'])
-        print(f"安装Lolcat依赖: {lolcat_packages}")
-        subprocess.run(f"{cmd} {lolcat_packages}".split(), check=True, stderr=subprocess.PIPE)
+        run_package_install(os_id, packages["lolcat"], "Lolcat依赖")
+
+def install_build_dependencies(os_id):
+    _, packages = get_package_config(os_id)
+    run_package_install(os_id, packages["build"], "编译工具")
+    run_package_install(os_id, packages["fastfetch"], "FastFetch编译依赖")
+
+def get_free_space_mb(path="/"):
+    usage = shutil.disk_usage(path)
+    return usage.free // (1024 * 1024)
+
+def normalize_fastfetch_arch():
+    machine = platform.machine().lower()
+    arch_map = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+        "i386": "i686",
+        "i486": "i686",
+        "i586": "i686",
+        "i686": "i686",
+        "armv6l": "armv6l",
+        "armv7l": "armv7l",
+        "ppc64le": "ppc64le",
+        "riscv64": "riscv64",
+        "s390x": "s390x",
+    }
+    return arch_map.get(machine)
+
+def get_fastfetch_binary_asset(os_id):
+    arch = normalize_fastfetch_arch()
+    if not arch:
+        return None
+
+    # Alpine 使用 musl，官方目前只提供 amd64 的 musl 预编译包。
+    if os_id == "alpine":
+        if arch == "amd64":
+            return f"fastfetch-musl-{arch}.tar.gz"
+        return None
+
+    return f"fastfetch-linux-{arch}.tar.gz"
+
+def install_fastfetch_from_release(os_id):
+    asset = get_fastfetch_binary_asset(os_id)
+    if not asset:
+        print("当前系统架构没有匹配的FastFetch预编译包，准备尝试源码编译")
+        return None
+
+    version = FASTFETCH_VERSION
+    url = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{version}/{asset}"
+    work_dir = tempfile.mkdtemp(prefix="fastfetch-release-")
+    archive_path = os.path.join(work_dir, asset)
+
+    try:
+        print(f"尝试安装FastFetch官方预编译包: {asset}")
+        print(f"下载: {url}")
+        urllib.request.urlretrieve(url, archive_path)
+
+        print(f"解压: {archive_path}")
+        shutil.unpack_archive(archive_path, work_dir)
+        extracted_dirs = [
+            os.path.join(work_dir, name)
+            for name in os.listdir(work_dir)
+            if os.path.isdir(os.path.join(work_dir, name))
+        ]
+        if not extracted_dirs:
+            raise RuntimeError("预编译包解压后未找到目录")
+
+        src_usr = os.path.join(extracted_dirs[0], "usr")
+        if not os.path.isdir(src_usr):
+            raise RuntimeError("预编译包中未找到 usr 目录")
+
+        print("安装FastFetch预编译文件到 /usr")
+        shutil.copytree(src_usr, "/usr", dirs_exist_ok=True)
+
+        fastfetch_path = shutil.which("fastfetch") or "/usr/bin/fastfetch"
+        if not os.path.exists(fastfetch_path):
+            raise RuntimeError("预编译包安装后未找到 fastfetch")
+
+        print(f"FastFetch 预编译包安装成功: {fastfetch_path}")
+        return fastfetch_path
+    except Exception as e:
+        print(f"预编译包安装失败: {str(e)}")
+        return None
+    finally:
+        print(f"清理预编译包临时目录: {work_dir}")
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 # 编译安装FastFetch
-def install_fastfetch():
+def install_fastfetch_from_source(os_id):
     print("\n正在安装FastFetch...")
-    
-    # 查找现有安装路径
-    existing_path = shutil.which("fastfetch")
-    if existing_path:
-        print(f"FastFetch 已经安装于: {existing_path}")
-        return existing_path
-    
+
+    free_mb = get_free_space_mb("/")
+    if free_mb < MIN_SOURCE_BUILD_SPACE_MB:
+        print(f"错误：当前根分区可用空间约 {free_mb} MB，不建议源码编译FastFetch")
+        print(f"源码编译至少预留约 {MIN_SOURCE_BUILD_SPACE_MB} MB；小盘LXC请优先使用官方预编译包")
+        sys.exit(1)
+
+    install_build_dependencies(os_id)
+
     # 检查编译环境
     if not shutil.which("g++") or not shutil.which("cmake"):
         print("错误：缺少必要的编译工具 (g++ 或 cmake)")
@@ -150,7 +243,7 @@ def install_fastfetch():
         
         # 克隆仓库
         repo_url = "https://github.com/fastfetch-cli/fastfetch.git"
-        fastfetch_version = os.environ.get("FASTFETCH_VERSION", "2.65.1")
+        fastfetch_version = FASTFETCH_VERSION
         clone_cmd = ["git", "clone", "--depth", "1", "--branch", fastfetch_version, repo_url, f"{work_dir}/fastfetch"]
         print(f"克隆仓库: {' '.join(clone_cmd)}")
         subprocess.run(clone_cmd, check=True, stderr=subprocess.PIPE)
@@ -187,6 +280,30 @@ def install_fastfetch():
         # 清理工作目录
         print(f"清理构建目录: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
+
+def install_fastfetch(os_id):
+    print("\n正在安装FastFetch...")
+
+    # 查找现有安装路径
+    existing_path = shutil.which("fastfetch")
+    if existing_path:
+        print(f"FastFetch 已经安装于: {existing_path}")
+        return existing_path
+
+    install_method = os.environ.get("FASTFETCH_INSTALL_METHOD", "auto").lower()
+    if install_method not in ("auto", "binary", "source"):
+        print(f"错误：FASTFETCH_INSTALL_METHOD 不支持: {install_method}")
+        sys.exit(1)
+
+    if install_method in ("auto", "binary"):
+        fastfetch_path = install_fastfetch_from_release(os_id)
+        if fastfetch_path:
+            return fastfetch_path
+        if install_method == "binary":
+            print("错误：已指定只使用预编译包安装，但安装失败")
+            sys.exit(1)
+
+    return install_fastfetch_from_source(os_id)
 
 # 从源码编译安装Lolcat
 def install_lolcat_from_source():
@@ -504,7 +621,7 @@ def main():
         install_packages(os_id)
         
         # 安装并获取二进制路径
-        fastfetch_path = install_fastfetch()
+        fastfetch_path = install_fastfetch(os_id)
         lolcat_path = install_lolcat()
         
         # 验证路径有效性
@@ -551,7 +668,8 @@ def main():
         print(f"返回代码: {e.returncode}")
         print(f"错误输出: {e.stderr.decode('utf-8') if e.stderr else '无'}")
         
-        if "git clone" in " ".join(e.cmd):
+        failed_cmd = " ".join(e.cmd) if isinstance(e.cmd, (list, tuple)) else str(e.cmd)
+        if "git clone" in failed_cmd:
             print("\n解决方法:")
             print("1. 手动清理临时目录: sudo rm -rf /tmp/fastfetch*")
             print("2. 检查网络连接是否正常")
