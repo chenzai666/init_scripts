@@ -91,7 +91,7 @@ def install_packages(os_id):
         "centos": ["rubygems"],
         "rhel": ["rubygems"],
         "opensuse": ["ruby"],
-        "alpine": ["ruby", "ruby-dev", "ruby-rubygems", "ruby-rake"]
+        "alpine": ["ruby", "ruby-dev", "ruby-rake"]
     }
 
     packages = {
@@ -273,8 +273,14 @@ def find_lolcat_path():
             text=True,
             stderr=subprocess.DEVNULL
         ).split(":")[0].strip()
+        gem_bindir = subprocess.check_output(
+            ["gem", "environment", "bindir"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
         
         possible_paths = [
+            f"{gem_bindir}/lolcat",
             f"{gem_path}/bin/lolcat",
             f"{gem_path}/gems/lolcat-*/bin/lolcat"
         ]
