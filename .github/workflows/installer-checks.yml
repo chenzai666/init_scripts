@@ -129,6 +129,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Add existing autofetch profile entries
+        run: |
+          printf '\nautofetch --color\n# autofetch --already-disabled\n' >> /etc/profile
+
       - name: Run installer with lolcat skipped
         env:
           FASTFETCH_VERSION: '2.65.1'
@@ -142,3 +146,6 @@ jobs:
           fastfetch --version
           ! command -v lolcat
           grep -F "$(command -v fastfetch) || true" /etc/profile
+          grep -F "# autofetch --color" /etc/profile
+          grep -F "# autofetch --already-disabled" /etc/profile
+          ! grep -Fx "autofetch --color" /etc/profile
