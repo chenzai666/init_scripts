@@ -76,7 +76,7 @@ def install_packages(os_id):
         "fedora": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
         "centos": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
         "rhel": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
-        "opensuse": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "libvulkan-devel", "wayland-protocols-devel", "libdrm-devel"],
+        "opensuse": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-devel", "wayland-protocols-devel", "libdrm-devel"],
         "alpine": ["pciutils", "pciutils-dev", "vulkan-tools", "vulkan-headers", "vulkan-loader-dev", "wayland-protocols", "libdrm-dev"]
     }
 
@@ -91,7 +91,7 @@ def install_packages(os_id):
         "centos": ["rubygems"],
         "rhel": ["rubygems"],
         "opensuse": ["ruby", "rubygem-rake"],
-        "alpine": ["ruby", "ruby-dev", "ruby-rake"]
+        "alpine": ["ruby", "ruby-dev", "ruby-rubygems", "ruby-rake"]
     }
 
     packages = {
