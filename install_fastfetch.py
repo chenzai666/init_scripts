@@ -30,6 +30,8 @@ def detect_os():
     if os_id == "ubuntu":
         if "pop" in platform.release().lower():
             os_id = "pop"
+    elif os_id.startswith("opensuse"):
+        os_id = "opensuse"
     
     return os_id
 
@@ -89,7 +91,7 @@ def install_packages(os_id):
         "centos": ["rubygems"],
         "rhel": ["rubygems"],
         "opensuse": ["ruby", "rubygem-rake"],
-        "alpine": ["ruby", "ruby-rake"]
+        "alpine": ["ruby", "ruby-dev", "ruby-rake"]
     }
 
     packages = {
@@ -323,8 +325,11 @@ def install_lolcat():
             "centos": "lolcat-c",
             "rhel": "lolcat-c",
             "opensuse": "rubygem-lolcat",
-            "alpine": "ruby-lolcat"
+            "alpine": None
         }.get(os_id, "lolcat")
+
+        if not package_name:
+            raise RuntimeError(f"{os_id} 没有可用的系统 lolcat 包，尝试使用 gem 安装")
         
         if os_id in ["ubuntu", "debian", "pop", "kali"]:
             subprocess.run(["apt-get", "install", "-y", package_name], check=True)
