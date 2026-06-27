@@ -586,6 +586,62 @@ fi
 FETCH_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/AutoFetch"
 INSTALL_PATH="/usr/local/bin/AutoFetch"
 
+disable_fastfetch_profile_config() {
+    PROFILE_FILE="/etc/profile"
+    TMP_FILE="/etc/profile.autofetch.tmp"
+    DISABLED=0
+    IN_FASTFETCH_BLOCK=0
+
+    if [ ! -f "$PROFILE_FILE" ]; then
+        return 0
+    fi
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            "# ==== 由FastFetch安装脚本添加 ===="*)
+                echo "# 已由AutoFetch安装脚本禁用旧的FastFetch配置" >> "$TMP_FILE"
+                echo "# $line" >> "$TMP_FILE"
+                IN_FASTFETCH_BLOCK=1
+                DISABLED=$((DISABLED + 1))
+                continue
+                ;;
+        esac
+
+        if [ "$IN_FASTFETCH_BLOCK" -eq 1 ]; then
+            echo "# $line" >> "$TMP_FILE"
+            case "$line" in
+                "# ==== 结束FastFetch配置 ===="*)
+                    IN_FASTFETCH_BLOCK=0
+                    ;;
+            esac
+            continue
+        fi
+
+        stripped="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+        case "$stripped" in
+            \#*|"")
+                echo "$line" >> "$TMP_FILE"
+                ;;
+            *fastfetch*)
+                echo "# 已由AutoFetch安装脚本禁用旧的fastfetch启动项" >> "$TMP_FILE"
+                echo "# $line" >> "$TMP_FILE"
+                DISABLED=$((DISABLED + 1))
+                ;;
+            *)
+                echo "$line" >> "$TMP_FILE"
+                ;;
+        esac
+    done < "$PROFILE_FILE"
+
+    if [ "$DISABLED" -gt 0 ]; then
+        mv "$TMP_FILE" "$PROFILE_FILE"
+        echo "已禁用 /etc/profile 中 $DISABLED 条启用状态的FastFetch配置"
+    else
+        rm -f "$TMP_FILE"
+        echo "未检测到需要禁用的启用状态FastFetch配置"
+    fi
+}
+
 # 安装依赖
 echo "安装必要依赖..."
 # 检测系统类型并安装依赖
@@ -620,6 +676,8 @@ fi
 # 设置执行权限
 chmod +x "$INSTALL_PATH"
 echo "设置执行权限: $INSTALL_PATH"
+
+disable_fastfetch_profile_config
 
 # 添加到 /etc/profile
 PROFILE_HOOK="# AutoFetch Hook
