@@ -1,4 +1,4 @@
-﻿name: installer-checks
+name: installer-checks
 
 on:
   push:
