@@ -87,3 +87,31 @@ jobs:
 
       - name: Verify profile hook
         run: grep -F "$(command -v fastfetch)" /etc/profile
+
+  alpine-binary-test:
+    name: Alpine binary install
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
+    timeout-minutes: 15
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bootstrap container
+        run: apk add --no-cache python3 curl ca-certificates bash
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run installer without build dependencies
+        env:
+          FASTFETCH_VERSION: '2.65.1'
+          FASTFETCH_INSTALL_METHOD: binary
+        run: python3 install_fastfetch.py
+
+      - name: Verify fastfetch
+        run: |
+          command -v fastfetch
+          fastfetch --version
+          ! command -v gcc
+          ! command -v cmake
+
