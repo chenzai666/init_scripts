@@ -6,7 +6,7 @@ import glob
 import platform
 import shutil
 import tempfile
-from pathlib import Path
+import urllib.request
 
 # 检查root权限
 def check_root():
@@ -78,10 +78,24 @@ def install_packages(os_id):
         "alpine": ["pciutils", "pciutils-dev", "vulkan-tools", "vulkan-headers", "vulkan-loader-dev", "wayland-protocols", "libdrm-dev"]
     }
 
+    lolcat_packages_by_os = {
+        "debian": ["rubygems"],
+        "ubuntu": ["rubygems"],
+        "pop": ["rubygems"],
+        "kali": ["rubygems"],
+        "arch": ["ruby"],
+        "manjaro": ["ruby"],
+        "fedora": ["rubygems"],
+        "centos": ["rubygems"],
+        "rhel": ["rubygems"],
+        "opensuse": ["ruby", "rubygem-rake"],
+        "alpine": ["ruby", "ruby-rake"]
+    }
+
     packages = {
         "base": ["curl", "git"] + compiler_packages.get(os_id, []),
         "fastfetch": fastfetch_packages_by_os.get(os_id, []),
-        "lolcat": ["rubygems"]
+        "lolcat": lolcat_packages_by_os.get(os_id, [])
     }
 
     # 选择正确的包管理器
@@ -316,8 +330,11 @@ def install_lolcat():
             subprocess.run(["apt-get", "install", "-y", package_name], check=True)
         elif os_id in ["arch", "manjaro"]:
             subprocess.run(["pacman", "-S", "--noconfirm", package_name], check=True)
-        elif os_id in ["fedora", "centos", "rhel"]:
+        elif os_id == "fedora":
             subprocess.run(["dnf", "install", "-y", package_name], check=True)
+        elif os_id in ["centos", "rhel"]:
+            rpm_pm = "dnf" if shutil.which("dnf") else "yum"
+            subprocess.run([rpm_pm, "install", "-y", package_name], check=True)
         elif os_id in ["opensuse"]:
             subprocess.run(["zypper", "install", "-y", package_name], check=True)
         elif os_id in ["alpine"]:
@@ -487,8 +504,7 @@ def main():
         # 测试Lolcat是否能正常运行
         print("\n测试Lolcat...")
         try:
-            test_cmd = f'echo "测试彩色输出" | {lolcat_path} --version'
-            subprocess.run(test_cmd, shell=True, check=True)
+            subprocess.run([lolcat_path, "--version"], check=True)
             print("Lolcat测试通过")
         except Exception as e:
             print(f"Lolcat测试失败: {str(e)}")
