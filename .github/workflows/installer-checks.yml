@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       run_install_test:
-        description: 'Run the real Ubuntu fastfetch installer test'
+        description: 'Run real fastfetch installer tests in Linux containers'
         required: true
         default: 'false'
         type: choice
@@ -36,19 +36,49 @@ jobs:
       - name: Check shell syntax
         run: bash -n init2.0.sh
 
-  ubuntu-install-test:
-    name: Ubuntu install test
+  install-test:
+    name: Install test (${{ matrix.distro }})
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian-12
+            image: debian:bookworm
+            bootstrap: apt-get update && apt-get install -y python3 git curl ca-certificates
+          - distro: debian-13
+            image: debian:trixie
+            bootstrap: apt-get update && apt-get install -y python3 git curl ca-certificates
+          - distro: ubuntu
+            image: ubuntu:24.04
+            bootstrap: apt-get update && apt-get install -y python3 git curl ca-certificates
+          - distro: fedora
+            image: fedora:latest
+            bootstrap: dnf install -y python3 git curl ca-certificates
+          - distro: arch
+            image: archlinux:latest
+            bootstrap: pacman -Sy --noconfirm python git curl ca-certificates
+          - distro: alpine
+            image: alpine:latest
+            bootstrap: apk add --no-cache python3 git curl ca-certificates bash
+          - distro: opensuse
+            image: opensuse/leap:latest
+            bootstrap: zypper --non-interactive install python3 git curl ca-certificates
+    container:
+      image: ${{ matrix.image }}
     steps:
+      - name: Bootstrap container
+        run: ${{ matrix.bootstrap }}
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Run installer
         env:
           FASTFETCH_VERSION: '2.65.1'
-        run: sudo -E python3 install_fastfetch.py
+        run: python3 install_fastfetch.py
 
       - name: Verify fastfetch
         run: |
