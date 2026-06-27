@@ -615,13 +615,13 @@ def disable_autofetch_profile_config():
     config_path = "/etc/profile"
     temp_path = "/etc/profile.autofetch.tmp"
     disabled_count = 0
-    autofetch_pattern = re.compile(r'^(?:\S+=\S+\s+)*(?:\S*/)?autofetch(?:\s|$|[|;&)])')
+    autofetch_pattern = re.compile(r'^(?:\S+=\S+\s+)*(?:\S*/)?autofetch(?:\s|$|[|;&)])', re.IGNORECASE)
 
     try:
         with open(config_path, "r") as infile, open(temp_path, "w") as outfile:
             for line in infile:
                 stripped = line.lstrip()
-                if stripped.startswith("#") or "autofetch" not in line or not autofetch_pattern.search(stripped):
+                if stripped.startswith("#") or "autofetch" not in line.lower() or not autofetch_pattern.search(stripped):
                     outfile.write(line)
                     continue
 
