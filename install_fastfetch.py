@@ -7,6 +7,7 @@ import platform
 import shutil
 import tempfile
 import urllib.request
+import re
 
 FASTFETCH_VERSION = os.environ.get("FASTFETCH_VERSION", "2.65.1")
 MIN_SOURCE_BUILD_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_SOURCE_BUILD_SPACE_MB", "900"))
@@ -609,10 +610,45 @@ def remove_old_config():
         if os.path.exists(temp_path):
             os.remove(temp_path)
         return False
+
+def disable_autofetch_profile_config():
+    config_path = "/etc/profile"
+    temp_path = "/etc/profile.autofetch.tmp"
+    disabled_count = 0
+    autofetch_pattern = re.compile(r'^(?:\S+=\S+\s+)*(?:\S*/)?autofetch(?:\s|$|[|;&)])')
+
+    try:
+        with open(config_path, "r") as infile, open(temp_path, "w") as outfile:
+            for line in infile:
+                stripped = line.lstrip()
+                if stripped.startswith("#") or "autofetch" not in line or not autofetch_pattern.search(stripped):
+                    outfile.write(line)
+                    continue
+
+                indent = line[:len(line) - len(stripped)]
+                outfile.write(f"{indent}# 已由FastFetch安装脚本禁用旧的autofetch启动项\n")
+                outfile.write(f"{indent}# {stripped}")
+                disabled_count += 1
+
+        if disabled_count:
+            shutil.move(temp_path, config_path)
+            print(f"已禁用 /etc/profile 中 {disabled_count} 条启用状态的autofetch配置")
+        else:
+            os.remove(temp_path)
+            print("未检测到需要禁用的启用状态autofetch配置")
+
+        return disabled_count
+    except Exception as e:
+        print(f"禁用autofetch配置时出错: {str(e)}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return 0
+
 # 配置终端启动脚本
 def configure_terminal_startup(fastfetch_path, lolcat_path):
     # 清理旧配置
     removed = remove_old_config()
+    disable_autofetch_profile_config()
     
     # 使用绝对路径创建命令
     if lolcat_path:
