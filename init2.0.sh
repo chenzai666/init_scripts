@@ -703,6 +703,8 @@ check_dependencies() {
             yum install -y python3
         elif command -v pacman &> /dev/null; then
             pacman -S --noconfirm python
+        elif command -v apk &> /dev/null; then
+            apk add --no-cache python3
         else
             error "无法自动安装 Python3，请手动安装后重试"
         fi
@@ -719,6 +721,8 @@ check_dependencies() {
             yum install -y curl
         elif command -v pacman &> /dev/null; then
             pacman -S --noconfirm curl
+        elif command -v apk &> /dev/null; then
+            apk add --no-cache curl
         else
             error "无法自动安装 curl，请手动安装后重试"
         fi
@@ -958,4 +962,3 @@ case $num in
 esac
 }
 start_menu
-
