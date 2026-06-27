@@ -254,6 +254,7 @@ def find_lolcat_path():
     # 2. 常见系统路径
     common_paths = [
         "/usr/bin/lolcat",
+        "/usr/bin/lolcat*",
         "/usr/local/bin/lolcat",
         "/usr/games/lolcat",  # Debian特有路径
         "/snap/bin/lolcat",
@@ -262,7 +263,12 @@ def find_lolcat_path():
     ]
     
     for path in common_paths:
-        if os.path.exists(path) and os.access(path, os.X_OK):
+        if "*" in path:
+            matches = glob.glob(path)
+            for match in matches:
+                if os.path.exists(match) and os.access(match, os.X_OK):
+                    return match
+        elif os.path.exists(path) and os.access(path, os.X_OK):
             return path
     
     # 3. 尝试Ruby gem路径
@@ -281,7 +287,9 @@ def find_lolcat_path():
         
         possible_paths = [
             f"{gem_bindir}/lolcat",
+            f"{gem_bindir}/lolcat*",
             f"{gem_path}/bin/lolcat",
+            f"{gem_path}/bin/lolcat*",
             f"{gem_path}/gems/lolcat-*/bin/lolcat"
         ]
         
