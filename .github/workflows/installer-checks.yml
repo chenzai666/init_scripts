@@ -212,3 +212,41 @@ jobs:
           command -v fastfetch
           fastfetch --version
           sh -n /etc/profile
+
+  autofetch-disables-fastfetch:
+    name: AutoFetch disables FastFetch
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
+    timeout-minutes: 15
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bootstrap container
+        run: apk add --no-cache bash curl ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add existing FastFetch profile entries
+        run: |
+          cat >> /etc/profile <<'EOF'
+
+          # ==== 由FastFetch安装脚本添加 ====
+          # 系统启动时显示彩色系统信息
+          /usr/bin/fastfetch || true
+          # ==== 结束FastFetch配置 ====
+          # /usr/bin/fastfetch --already-disabled
+          EOF
+
+      - name: Run init AutoFetch menu option
+        run: printf '22\n' | bash init2.0.sh
+
+      - name: Verify FastFetch disabled and AutoFetch enabled
+        run: |
+          grep -F "# 已由AutoFetch安装脚本禁用旧的FastFetch配置" /etc/profile
+          grep -F "# /usr/bin/fastfetch || true" /etc/profile
+          grep -F "# /usr/bin/fastfetch --already-disabled" /etc/profile
+          ! grep -Fx "/usr/bin/fastfetch || true" /etc/profile
+          grep -F "# AutoFetch Hook" /etc/profile
+          grep -F "/usr/local/bin/AutoFetch" /etc/profile
+          sh -n /etc/profile
