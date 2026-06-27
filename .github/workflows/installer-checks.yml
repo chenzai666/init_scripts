@@ -131,7 +131,19 @@ jobs:
 
       - name: Add existing autofetch profile entries
         run: |
-          printf '\nAutoFetch --color\n# AutoFetch --already-disabled\n' >> /etc/profile
+          cat >> /etc/profile <<'EOF'
+
+          # AutoFetch Hook
+          if [ -x /usr/local/bin/AutoFetch ]; then
+              if [ "$(tty)" = "/dev/console" ] || [ -n "$SSH_TTY" ]; then
+                  /usr/local/bin/AutoFetch
+              fi
+          fi
+          # AutoFetch already disabled by user
+          # /usr/local/bin/AutoFetch
+          AutoFetch --color
+          # AutoFetch --already-disabled
+          EOF
 
       - name: Run installer with lolcat skipped
         env:
@@ -146,6 +158,11 @@ jobs:
           fastfetch --version
           ! command -v lolcat
           grep -F "$(command -v fastfetch) || true" /etc/profile
+          grep -F "# 已由FastFetch安装脚本禁用旧的AutoFetch Hook" /etc/profile
+          grep -F "# if [ -x /usr/local/bin/AutoFetch ]; then" /etc/profile
+          grep -F "# /usr/local/bin/AutoFetch" /etc/profile
           grep -F "# AutoFetch --color" /etc/profile
           grep -F "# AutoFetch --already-disabled" /etc/profile
+          grep -F "# AutoFetch already disabled by user" /etc/profile
           ! grep -Fx "AutoFetch --color" /etc/profile
+          ! grep -Fx "                  /usr/local/bin/AutoFetch" /etc/profile
