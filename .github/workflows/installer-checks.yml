@@ -1,0 +1,59 @@
+﻿name: installer-checks
+
+on:
+  push:
+    paths:
+      - 'install_fastfetch.py'
+      - 'init2.0.sh'
+      - '.github/workflows/installer-checks.yml'
+  pull_request:
+    paths:
+      - 'install_fastfetch.py'
+      - 'init2.0.sh'
+      - '.github/workflows/installer-checks.yml'
+  workflow_dispatch:
+    inputs:
+      run_install_test:
+        description: 'Run the real Ubuntu fastfetch installer test'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  static-checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Python syntax
+        run: python3 -m py_compile install_fastfetch.py
+
+      - name: Check shell syntax
+        run: bash -n init2.0.sh
+
+  ubuntu-install-test:
+    name: Ubuntu install test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run installer
+        env:
+          FASTFETCH_VERSION: '2.65.1'
+        run: sudo -E python3 install_fastfetch.py
+
+      - name: Verify fastfetch
+        run: |
+          command -v fastfetch
+          fastfetch --version
+
+      - name: Verify profile hook
+        run: grep -F "$(command -v fastfetch)" /etc/profile
