@@ -169,3 +169,30 @@ jobs:
           ! grep -Fx "AutoFetch --color" /etc/profile
           ! grep -Fx "                  /usr/local/bin/AutoFetch" /etc/profile
           sh -n /etc/profile
+
+  alpine-init-bootstrap:
+    name: Alpine init bootstrap
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
+    timeout-minutes: 15
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bootstrap container without Python
+        run: apk add --no-cache bash curl ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run init fastfetch menu option
+        env:
+          FASTFETCH_INSTALL_METHOD: binary
+          FASTFETCH_INSTALL_LOLCAT: skip
+        run: printf '21\n' | bash init2.0.sh
+
+      - name: Verify bootstrap result
+        run: |
+          command -v python3
+          command -v fastfetch
+          fastfetch --version
+          sh -n /etc/profile
