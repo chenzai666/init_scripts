@@ -36,6 +36,22 @@ jobs:
       - name: Check shell syntax
         run: bash -n init2.0.sh
 
+      - name: Check Alpine aarch64 binary selection
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location("install_fastfetch", "install_fastfetch.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          module.platform.machine = lambda: "aarch64"
+          assert module.get_fastfetch_binary_asset("alpine") == "fastfetch-linux-aarch64.tar.gz"
+
+          module.platform.machine = lambda: "x86_64"
+          assert module.get_fastfetch_binary_asset("alpine") == "fastfetch-musl-amd64.tar.gz"
+          PY
+
   install-test:
     name: Install test (${{ matrix.distro }})
     runs-on: ubuntu-latest
