@@ -64,9 +64,23 @@ def install_packages(os_id):
         "alpine": ["build-base", "cmake", "pkgconf"]
     }
     
+    fastfetch_packages_by_os = {
+        "debian": ["pciutils", "libpci-dev", "vulkan-tools", "libvulkan-dev", "wayland-protocols", "libdrm-dev"],
+        "ubuntu": ["pciutils", "libpci-dev", "vulkan-tools", "libvulkan-dev", "wayland-protocols", "libdrm-dev"],
+        "pop": ["pciutils", "libpci-dev", "vulkan-tools", "libvulkan-dev", "wayland-protocols", "libdrm-dev"],
+        "kali": ["pciutils", "libpci-dev", "vulkan-tools", "libvulkan-dev", "wayland-protocols", "libdrm-dev"],
+        "arch": ["pciutils", "vulkan-tools", "vulkan-headers", "wayland-protocols", "libdrm"],
+        "manjaro": ["pciutils", "vulkan-tools", "vulkan-headers", "wayland-protocols", "libdrm"],
+        "fedora": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
+        "centos": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
+        "rhel": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "vulkan-loader-devel", "wayland-protocols-devel", "libdrm-devel"],
+        "opensuse": ["pciutils", "pciutils-devel", "vulkan-tools", "vulkan-headers", "libvulkan-devel", "wayland-protocols-devel", "libdrm-devel"],
+        "alpine": ["pciutils", "pciutils-dev", "vulkan-tools", "vulkan-headers", "vulkan-loader-dev", "wayland-protocols", "libdrm-dev"]
+    }
+
     packages = {
         "base": ["curl", "git"] + compiler_packages.get(os_id, []),
-        "fastfetch": ["pciutils", "vulkan-tools", "wayland-protocols"],
+        "fastfetch": fastfetch_packages_by_os.get(os_id, []),
         "lolcat": ["rubygems"]
     }
 
@@ -114,9 +128,10 @@ def install_fastfetch():
         
         # 克隆仓库
         repo_url = "https://github.com/fastfetch-cli/fastfetch.git"
-        clone_cmd = f"git clone --depth 1 {repo_url} {work_dir}/fastfetch"
-        print(f"克隆仓库: {clone_cmd}")
-        subprocess.run(clone_cmd.split(), check=True, stderr=subprocess.PIPE)
+        fastfetch_version = os.environ.get("FASTFETCH_VERSION", "2.65.1")
+        clone_cmd = ["git", "clone", "--depth", "1", "--branch", fastfetch_version, repo_url, f"{work_dir}/fastfetch"]
+        print(f"克隆仓库: {' '.join(clone_cmd)}")
+        subprocess.run(clone_cmd, check=True, stderr=subprocess.PIPE)
         
         # 编译安装
         os.chdir(f"{work_dir}/fastfetch")
