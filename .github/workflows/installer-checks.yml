@@ -160,9 +160,12 @@ jobs:
           grep -F "$(command -v fastfetch) || true" /etc/profile
           grep -F "# 已由FastFetch安装脚本禁用旧的AutoFetch Hook" /etc/profile
           grep -F "# if [ -x /usr/local/bin/AutoFetch ]; then" /etc/profile
+          grep -F '    # if [ "$(tty)" = "/dev/console" ] || [ -n "$SSH_TTY" ]; then' /etc/profile
           grep -F "# /usr/local/bin/AutoFetch" /etc/profile
+          test "$(grep -F '# fi' /etc/profile | wc -l)" -ge 2
           grep -F "# AutoFetch --color" /etc/profile
           grep -F "# AutoFetch --already-disabled" /etc/profile
           grep -F "# AutoFetch already disabled by user" /etc/profile
           ! grep -Fx "AutoFetch --color" /etc/profile
           ! grep -Fx "                  /usr/local/bin/AutoFetch" /etc/profile
+          sh -n /etc/profile
