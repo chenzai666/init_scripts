@@ -190,18 +190,34 @@ def get_fastfetch_binary_asset(os_id):
     if not arch:
         return None
 
-    # Alpine 使用 musl，官方目前只提供 amd64 的 musl 预编译包。
+    # Alpine 使用 musl。官方目前只提供 amd64 的 musl 包；
+    # 其他架构先尝试 glibc Linux 包配合 gcompat，避免小盘 LXC 直接源码编译。
     if os_id == "alpine":
         if arch == "amd64":
             return f"fastfetch-musl-{arch}.tar.gz"
-        return None
+        return f"fastfetch-linux-{arch}.tar.gz"
 
     return f"fastfetch-linux-{arch}.tar.gz"
+
+def install_alpine_binary_compat(os_id):
+    if os_id != "alpine":
+        return
+
+    arch = normalize_fastfetch_arch()
+    if arch == "amd64":
+        return
+
+    print("Alpine 当前架构没有官方 musl 预编译包，安装 gcompat 以尝试运行 Linux 预编译包")
+    try:
+        subprocess.run(["apk", "add", "--no-cache", "gcompat", "libstdc++"], check=True, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print("安装 gcompat/libstdc++ 失败，无法使用 Linux 预编译包")
+        raise e
 
 def install_fastfetch_from_release(os_id):
     asset = get_fastfetch_binary_asset(os_id)
     if not asset:
-        print("当前系统架构没有匹配的FastFetch预编译包，准备尝试源码编译")
+        print("当前系统架构没有匹配的FastFetch预编译包")
         return None
 
     version = FASTFETCH_VERSION
@@ -211,6 +227,7 @@ def install_fastfetch_from_release(os_id):
 
     try:
         print(f"尝试安装FastFetch官方预编译包: {asset}")
+        install_alpine_binary_compat(os_id)
         print(f"下载: {url}")
         urllib.request.urlretrieve(url, archive_path)
 
@@ -234,6 +251,8 @@ def install_fastfetch_from_release(os_id):
         fastfetch_path = shutil.which("fastfetch") or "/usr/bin/fastfetch"
         if not os.path.exists(fastfetch_path):
             raise RuntimeError("预编译包安装后未找到 fastfetch")
+
+        subprocess.run([fastfetch_path, "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
         print(f"FastFetch 预编译包安装成功: {fastfetch_path}")
         return fastfetch_path
@@ -332,6 +351,11 @@ def install_fastfetch(os_id):
         if install_method == "binary":
             print("错误：已指定只使用预编译包安装，但安装失败")
             sys.exit(1)
+
+    if os_id == "alpine" and get_free_space_mb("/") < MIN_SOURCE_BUILD_SPACE_MB:
+        print("错误：Alpine 当前架构无法使用预编译包，且磁盘空间不足以源码编译")
+        print("建议：更换 amd64 Alpine、增大磁盘空间，或换用 Debian/Ubuntu aarch64 后重试")
+        sys.exit(1)
 
     return install_fastfetch_from_source(os_id)
 
