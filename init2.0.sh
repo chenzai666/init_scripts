@@ -642,6 +642,54 @@ disable_fastfetch_profile_config() {
     fi
 }
 
+remove_fastfetch_disabled_autofetch_hook() {
+    PROFILE_FILE="/etc/profile"
+    TMP_FILE="/etc/profile.autofetch-hook.tmp"
+
+    if [ ! -f "$PROFILE_FILE" ] || ! grep -q "已由FastFetch安装脚本禁用旧的AutoFetch Hook" "$PROFILE_FILE"; then
+        return 0
+    fi
+
+    awk '
+    function uncommented(line) {
+        sub(/^[[:space:]]*#[[:space:]]?/, "", line)
+        return line
+    }
+    function shell_delta(line, raw) {
+        raw = uncommented(line)
+        if (raw ~ /^[[:space:]]*if[[:space:]]/) return 1
+        if (raw ~ /^[[:space:]]*fi([[:space:]]|$)/) return -1
+        return 0
+    }
+    /已由FastFetch安装脚本禁用旧的AutoFetch Hook/ {
+        in_block = 1
+        depth = 0
+        removed = 1
+        next
+    }
+    in_block {
+        delta = shell_delta($0)
+        depth += delta
+        if (delta < 0 && depth <= 0) {
+            in_block = 0
+            depth = 0
+        }
+        next
+    }
+    { print }
+    END {
+        if (removed) {
+            print "removed" > "/tmp/autofetch-hook-removed.flag"
+        }
+    }' "$PROFILE_FILE" > "$TMP_FILE"
+
+    mv "$TMP_FILE" "$PROFILE_FILE"
+    if [ -f /tmp/autofetch-hook-removed.flag ]; then
+        rm -f /tmp/autofetch-hook-removed.flag
+        echo "已清理之前被FastFetch禁用的旧AutoFetch Hook"
+    fi
+}
+
 # 安装依赖
 echo "安装必要依赖..."
 # 检测系统类型并安装依赖
@@ -678,6 +726,7 @@ chmod +x "$INSTALL_PATH"
 echo "设置执行权限: $INSTALL_PATH"
 
 disable_fastfetch_profile_config
+remove_fastfetch_disabled_autofetch_hook
 
 # 添加到 /etc/profile
 PROFILE_HOOK="# AutoFetch Hook
@@ -688,11 +737,11 @@ if [ -x /usr/local/bin/AutoFetch ]; then
 fi"
 
 # 检查是否已添加
-if ! grep -q "AutoFetch Hook" /etc/profile; then
+if ! grep -Eq '^[[:space:]]*/usr/local/bin/AutoFetch([[:space:]]|$)' /etc/profile; then
     echo "添加到 /etc/profile..."
     echo "$PROFILE_HOOK" >> /etc/profile
 else
-    echo "检测到已在 /etc/profile 中存在，跳过添加"
+    echo "检测到已在 /etc/profile 中存在启用状态的AutoFetch Hook，跳过添加"
 fi
 
 # 测试运行
