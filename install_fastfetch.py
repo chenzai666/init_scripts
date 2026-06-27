@@ -10,6 +10,9 @@ import urllib.request
 
 FASTFETCH_VERSION = os.environ.get("FASTFETCH_VERSION", "2.65.1")
 MIN_SOURCE_BUILD_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_SOURCE_BUILD_SPACE_MB", "900"))
+MIN_INSTALL_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_INSTALL_SPACE_MB", "150"))
+MIN_LOLCAT_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_LOLCAT_SPACE_MB", "300"))
+INSTALL_LOLCAT = os.environ.get("FASTFETCH_INSTALL_LOLCAT", "auto").lower()
 
 # 检查root权限
 def check_root():
@@ -119,12 +122,12 @@ def run_package_install(os_id, packages, label):
     print(f"安装{label}: {package_text}")
     subprocess.run(f"{cmd} {package_text}".split(), check=True, stderr=subprocess.PIPE)
 
-def install_packages(os_id):
+def install_packages(os_id, include_lolcat=True):
     _, packages = get_package_config(os_id)
     run_package_install(os_id, packages["base"], "基础依赖")
 
     # 安装Lolcat依赖
-    if packages['lolcat']:
+    if include_lolcat and packages['lolcat']:
         run_package_install(os_id, packages["lolcat"], "Lolcat依赖")
 
 def install_build_dependencies(os_id):
@@ -135,6 +138,32 @@ def install_build_dependencies(os_id):
 def get_free_space_mb(path="/"):
     usage = shutil.disk_usage(path)
     return usage.free // (1024 * 1024)
+
+def ensure_min_free_space(required_mb, action):
+    free_mb = get_free_space_mb("/")
+    if free_mb < required_mb:
+        print(f"错误：当前根分区可用空间约 {free_mb} MB，执行“{action}”至少需要 {required_mb} MB")
+        print("请先清理磁盘空间，或使用更大的LXC磁盘后重试")
+        sys.exit(1)
+    print(f"当前根分区可用空间约 {free_mb} MB，满足“{action}”要求")
+
+def should_install_lolcat():
+    if INSTALL_LOLCAT in ("1", "true", "yes", "always"):
+        ensure_min_free_space(MIN_LOLCAT_SPACE_MB, "安装Lolcat")
+        return True
+    if INSTALL_LOLCAT in ("0", "false", "no", "never", "skip"):
+        print("已设置 FASTFETCH_INSTALL_LOLCAT=skip，跳过Lolcat安装")
+        return False
+    if INSTALL_LOLCAT != "auto":
+        print(f"错误：FASTFETCH_INSTALL_LOLCAT 不支持: {INSTALL_LOLCAT}")
+        sys.exit(1)
+
+    free_mb = get_free_space_mb("/")
+    if free_mb < MIN_LOLCAT_SPACE_MB:
+        print(f"当前根分区可用空间约 {free_mb} MB，低于 {MIN_LOLCAT_SPACE_MB} MB，跳过Lolcat以保护小盘LXC")
+        print("提示：如需强制安装Lolcat，可在清理空间后设置 FASTFETCH_INSTALL_LOLCAT=always")
+        return False
+    return True
 
 def normalize_fastfetch_arch():
     machine = platform.machine().lower()
@@ -586,7 +615,10 @@ def configure_terminal_startup(fastfetch_path, lolcat_path):
     removed = remove_old_config()
     
     # 使用绝对路径创建命令
-    config_command = f'{fastfetch_path} | {lolcat_path} -f || true'
+    if lolcat_path:
+        config_command = f'{fastfetch_path} | {lolcat_path} -f || true'
+    else:
+        config_command = f'{fastfetch_path} || true'
     
     # 检查命令是否已存在
     with open("/etc/profile", "r") as f:
@@ -596,7 +628,10 @@ def configure_terminal_startup(fastfetch_path, lolcat_path):
             return
     
     print("\n配置终端启动脚本...")
-    print(f"使用绝对路径: FastFetch -> {fastfetch_path}, Lolcat -> {lolcat_path}")
+    if lolcat_path:
+        print(f"使用绝对路径: FastFetch -> {fastfetch_path}, Lolcat -> {lolcat_path}")
+    else:
+        print(f"使用绝对路径: FastFetch -> {fastfetch_path}，未启用Lolcat")
     
     # 定义新的配置块
     config_block = f"""
@@ -617,19 +652,25 @@ def main():
         os_id = detect_os()
         
         print(f"检测到系统: {os_id.capitalize()}")
+        ensure_min_free_space(MIN_INSTALL_SPACE_MB, "安装FastFetch")
         print("安装依赖...")
-        install_packages(os_id)
+        install_packages(os_id, include_lolcat=False)
         
         # 安装并获取二进制路径
         fastfetch_path = install_fastfetch(os_id)
-        lolcat_path = install_lolcat()
+        lolcat_path = None
+        if should_install_lolcat():
+            _, packages = get_package_config(os_id)
+            if packages["lolcat"]:
+                run_package_install(os_id, packages["lolcat"], "Lolcat依赖")
+            lolcat_path = install_lolcat()
         
         # 验证路径有效性
         if not fastfetch_path or not os.access(fastfetch_path, os.X_OK):
             print(f"错误: FastFetch不可执行: {fastfetch_path}")
             sys.exit(1)
             
-        if not lolcat_path or not os.access(lolcat_path, os.X_OK):
+        if lolcat_path and not os.access(lolcat_path, os.X_OK):
             print(f"错误: Lolcat不可执行: {lolcat_path}")
             sys.exit(1)
         
@@ -644,20 +685,26 @@ def main():
             sys.exit(1)
         
         # 测试Lolcat是否能正常运行
-        print("\n测试Lolcat...")
-        try:
-            subprocess.run([lolcat_path, "--version"], check=True)
-            print("Lolcat测试通过")
-        except Exception as e:
-            print(f"Lolcat测试失败: {str(e)}")
-            print("提示：可能需要手动配置Ruby环境")
+        if lolcat_path:
+            print("\n测试Lolcat...")
+            try:
+                subprocess.run([lolcat_path, "--version"], check=True)
+                print("Lolcat测试通过")
+            except Exception as e:
+                print(f"Lolcat测试失败: {str(e)}")
+                print("提示：可能需要手动配置Ruby环境")
+        else:
+            print("\n已跳过Lolcat，终端启动时将直接显示FastFetch")
         
         # 配置启动脚本
         configure_terminal_startup(fastfetch_path, lolcat_path)
         
         print("\n安装完成！")
         print(f"FastFetch路径: {fastfetch_path}")
-        print(f"Lolcat路径: {lolcat_path}")
+        if lolcat_path:
+            print(f"Lolcat路径: {lolcat_path}")
+        else:
+            print("Lolcat路径: 未安装")
         print("请执行以下命令立即生效或重启终端:")
         print("  source /etc/profile")
         print("提示：可通过编辑 /etc/profile 自定义配置")
