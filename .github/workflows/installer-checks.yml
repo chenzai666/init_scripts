@@ -115,3 +115,30 @@ jobs:
           ! command -v gcc
           ! command -v cmake
 
+  alpine-low-space-mode:
+    name: Alpine low-space mode
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_install_test == 'true'
+    timeout-minutes: 15
+    container:
+      image: alpine:latest
+    steps:
+      - name: Bootstrap container
+        run: apk add --no-cache python3 curl ca-certificates bash
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run installer with lolcat skipped
+        env:
+          FASTFETCH_VERSION: '2.65.1'
+          FASTFETCH_INSTALL_METHOD: binary
+          FASTFETCH_MIN_LOLCAT_SPACE_MB: '999999'
+        run: python3 install_fastfetch.py
+
+      - name: Verify low-space behavior
+        run: |
+          command -v fastfetch
+          fastfetch --version
+          ! command -v lolcat
+          grep -F "$(command -v fastfetch) || true" /etc/profile
