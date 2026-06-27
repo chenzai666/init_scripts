@@ -635,9 +635,23 @@ def disable_autofetch_profile_config():
         indent = line[:len(line) - len(stripped)]
         return f"{indent}# {stripped}"
 
+    def shell_if_delta(line):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            return 0
+
+        delta = 0
+        if re.search(r'(^|[;&|]\s*)if\b', stripped):
+            delta += 1
+        if re.match(r'^fi\b', stripped):
+            delta -= 1
+        return delta
+
     def disable_hook_block(block):
         nonlocal disabled_count
-        if not any(is_active_autofetch_line(line) for line in block):
+        has_active_autofetch = any(is_active_autofetch_line(line) for line in block)
+        has_active_shell = any(not is_comment_or_blank(line) for line in block)
+        if not has_active_autofetch and not has_active_shell:
             return block
 
         disabled_count += 1
@@ -661,9 +675,12 @@ def disable_autofetch_profile_config():
             if autofetch_hook_pattern.search(line):
                 block = [line]
                 index += 1
+                depth = 0
                 while index < len(lines):
-                    block.append(lines[index])
-                    if lines[index].lstrip().startswith("fi"):
+                    current = lines[index]
+                    block.append(current)
+                    depth += shell_if_delta(current)
+                    if depth <= 0 and current.lstrip().startswith("fi"):
                         index += 1
                         break
                     index += 1
@@ -672,6 +689,9 @@ def disable_autofetch_profile_config():
 
             if is_active_autofetch_line(line):
                 output.append("# 已由FastFetch安装脚本禁用旧的autofetch启动项\n")
+                output.append(comment_line(line))
+                disabled_count += 1
+            elif line.lstrip().startswith("fi") and output and any("FastFetch安装脚本禁用旧的AutoFetch Hook" in prev for prev in output[-8:]):
                 output.append(comment_line(line))
                 disabled_count += 1
             else:
