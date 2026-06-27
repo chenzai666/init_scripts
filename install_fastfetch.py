@@ -616,25 +616,76 @@ def disable_autofetch_profile_config():
     temp_path = "/etc/profile.autofetch.tmp"
     disabled_count = 0
     autofetch_pattern = re.compile(r'^(?:\S+=\S+\s+)*(?:\S*/)?autofetch(?:\s|$|[|;&)])', re.IGNORECASE)
+    autofetch_hook_pattern = re.compile(r'^\s*#\s*autofetch\b.*hook\b', re.IGNORECASE)
+
+    def is_active_autofetch_line(line):
+        stripped = line.lstrip()
+        return (
+            not stripped.startswith("#")
+            and "autofetch" in line.lower()
+            and autofetch_pattern.search(stripped)
+        )
+
+    def is_comment_or_blank(line):
+        stripped = line.strip()
+        return not stripped or stripped.startswith("#")
+
+    def comment_line(line):
+        stripped = line.lstrip()
+        indent = line[:len(line) - len(stripped)]
+        return f"{indent}# {stripped}"
+
+    def disable_hook_block(block):
+        nonlocal disabled_count
+        if not any(is_active_autofetch_line(line) for line in block):
+            return block
+
+        disabled_count += 1
+        disabled = ["# 已由FastFetch安装脚本禁用旧的AutoFetch Hook\n"]
+        for line in block:
+            if is_comment_or_blank(line):
+                disabled.append(line)
+            else:
+                disabled.append(comment_line(line))
+        return disabled
 
     try:
-        with open(config_path, "r") as infile, open(temp_path, "w") as outfile:
-            for line in infile:
-                stripped = line.lstrip()
-                if stripped.startswith("#") or "autofetch" not in line.lower() or not autofetch_pattern.search(stripped):
-                    outfile.write(line)
-                    continue
+        with open(config_path, "r") as infile:
+            lines = infile.readlines()
 
-                indent = line[:len(line) - len(stripped)]
-                outfile.write(f"{indent}# 已由FastFetch安装脚本禁用旧的autofetch启动项\n")
-                outfile.write(f"{indent}# {stripped}")
+        output = []
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+
+            if autofetch_hook_pattern.search(line):
+                block = [line]
+                index += 1
+                while index < len(lines):
+                    block.append(lines[index])
+                    if lines[index].lstrip().startswith("fi"):
+                        index += 1
+                        break
+                    index += 1
+                output.extend(disable_hook_block(block))
+                continue
+
+            if is_active_autofetch_line(line):
+                output.append("# 已由FastFetch安装脚本禁用旧的autofetch启动项\n")
+                output.append(comment_line(line))
                 disabled_count += 1
+            else:
+                output.append(line)
+            index += 1
 
         if disabled_count:
+            with open(temp_path, "w") as outfile:
+                outfile.writelines(output)
             shutil.move(temp_path, config_path)
             print(f"已禁用 /etc/profile 中 {disabled_count} 条启用状态的autofetch配置")
         else:
-            os.remove(temp_path)
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
             print("未检测到需要禁用的启用状态autofetch配置")
 
         return disabled_count
