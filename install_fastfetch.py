@@ -90,7 +90,7 @@ def install_packages(os_id):
         "fedora": ["rubygems"],
         "centos": ["rubygems"],
         "rhel": ["rubygems"],
-        "opensuse": ["ruby", "rubygem-rake"],
+        "opensuse": ["ruby"],
         "alpine": ["ruby", "ruby-dev", "ruby-rubygems", "ruby-rake"]
     }
 
@@ -116,6 +116,12 @@ def install_packages(os_id):
     fastfetch_packages = " ".join(packages['fastfetch'])
     print(f"安装FastFetch依赖: {fastfetch_packages}")
     subprocess.run(f"{cmd} {fastfetch_packages}".split(), check=True, stderr=subprocess.PIPE)
+
+    # 安装Lolcat依赖
+    if packages['lolcat']:
+        lolcat_packages = " ".join(packages['lolcat'])
+        print(f"安装Lolcat依赖: {lolcat_packages}")
+        subprocess.run(f"{cmd} {lolcat_packages}".split(), check=True, stderr=subprocess.PIPE)
 
 # 编译安装FastFetch
 def install_fastfetch():
