@@ -231,6 +231,13 @@ jobs:
         run: |
           cat >> /etc/profile <<'EOF'
 
+          # 已由FastFetch安装脚本禁用旧的AutoFetch Hook
+          # AutoFetch Hook
+          # if [ -x /usr/local/bin/AutoFetch ]; then
+          #     if [ "$(tty)" = "/dev/console" ] || [ -n "$SSH_TTY" ]; then
+          #         /usr/local/bin/AutoFetch
+          #     fi
+          # fi
           # ==== 由FastFetch安装脚本添加 ====
           # 系统启动时显示彩色系统信息
           /usr/bin/fastfetch || true
@@ -247,6 +254,8 @@ jobs:
           grep -F "# /usr/bin/fastfetch || true" /etc/profile
           grep -F "# /usr/bin/fastfetch --already-disabled" /etc/profile
           ! grep -Fx "/usr/bin/fastfetch || true" /etc/profile
-          grep -F "# AutoFetch Hook" /etc/profile
+          ! grep -F "已由FastFetch安装脚本禁用旧的AutoFetch Hook" /etc/profile
+          grep -Fx "# AutoFetch Hook" /etc/profile
           grep -F "/usr/local/bin/AutoFetch" /etc/profile
+          grep -Fx "        /usr/local/bin/AutoFetch" /etc/profile
           sh -n /etc/profile
