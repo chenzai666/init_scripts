@@ -6,10 +6,15 @@ import glob
 import platform
 import shutil
 import tempfile
+import hashlib
+import json
+import urllib.parse
 import urllib.request
 import re
 
 FASTFETCH_VERSION = os.environ.get("FASTFETCH_VERSION", "2.65.1")
+FASTFETCH_GITHUB_PROXY = os.environ.get("FASTFETCH_GITHUB_PROXY", "https://gh-proxy.com").strip()
+FASTFETCH_DOWNLOAD_TIMEOUT = int(os.environ.get("FASTFETCH_DOWNLOAD_TIMEOUT", "60"))
 MIN_SOURCE_BUILD_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_SOURCE_BUILD_SPACE_MB", "900"))
 MIN_INSTALL_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_INSTALL_SPACE_MB", "150"))
 MIN_LOLCAT_SPACE_MB = int(os.environ.get("FASTFETCH_MIN_LOLCAT_SPACE_MB", "300"))
@@ -214,6 +219,74 @@ def install_alpine_binary_compat(os_id):
         print("安装 gcompat/libstdc++ 失败，无法使用 Linux 预编译包")
         raise e
 
+def get_release_asset_sha256(version, asset):
+    api_url = f"https://api.github.com/repos/fastfetch-cli/fastfetch/releases/tags/{urllib.parse.quote(version)}"
+    request = urllib.request.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "init-scripts-fastfetch-installer",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=FASTFETCH_DOWNLOAD_TIMEOUT) as response:
+            release = json.load(response)
+    except Exception as e:
+        print(f"无法从 GitHub API 获取官方 SHA-256: {e}")
+        return None
+
+    for release_asset in release.get("assets", []):
+        if release_asset.get("name") == asset:
+            digest = release_asset.get("digest", "")
+            if digest.startswith("sha256:"):
+                return digest.split(":", 1)[1].lower()
+
+    print(f"GitHub Release 未提供 {asset} 的 SHA-256")
+    return None
+
+def calculate_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def get_release_download_urls(official_url, expected_sha256):
+    urls = []
+    if FASTFETCH_GITHUB_PROXY:
+        proxy = urllib.parse.urlparse(FASTFETCH_GITHUB_PROXY)
+        if proxy.scheme != "https" or not proxy.netloc:
+            print("FASTFETCH_GITHUB_PROXY 必须是 HTTPS 地址，跳过代理下载")
+        elif not expected_sha256:
+            print("无法验证文件完整性，跳过第三方代理下载")
+        else:
+            urls.append(f"{FASTFETCH_GITHUB_PROXY.rstrip('/')}/{official_url}")
+    urls.append(official_url)
+    return urls
+
+def download_release_archive(urls, archive_path, expected_sha256):
+    for url in urls:
+        try:
+            print(f"下载: {url}")
+            request = urllib.request.Request(url, headers={"User-Agent": "init-scripts-fastfetch-installer"})
+            with urllib.request.urlopen(request, timeout=FASTFETCH_DOWNLOAD_TIMEOUT) as response, open(archive_path, "wb") as output:
+                shutil.copyfileobj(response, output)
+
+            if expected_sha256:
+                actual_sha256 = calculate_sha256(archive_path)
+                if actual_sha256 != expected_sha256:
+                    raise RuntimeError(f"SHA-256 校验失败: {actual_sha256}")
+
+            print("下载文件 SHA-256 校验通过" if expected_sha256 else "未获取到 SHA-256，使用官方直连文件")
+            return True
+        except Exception as e:
+            print(f"下载失败: {e}")
+            if os.path.exists(archive_path):
+                os.remove(archive_path)
+
+    return False
+
 def install_fastfetch_from_release(os_id):
     asset = get_fastfetch_binary_asset(os_id)
     if not asset:
@@ -221,15 +294,17 @@ def install_fastfetch_from_release(os_id):
         return None
 
     version = FASTFETCH_VERSION
-    url = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{version}/{asset}"
+    official_url = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{version}/{asset}"
     work_dir = tempfile.mkdtemp(prefix="fastfetch-release-")
     archive_path = os.path.join(work_dir, asset)
 
     try:
         print(f"尝试安装FastFetch官方预编译包: {asset}")
         install_alpine_binary_compat(os_id)
-        print(f"下载: {url}")
-        urllib.request.urlretrieve(url, archive_path)
+        expected_sha256 = get_release_asset_sha256(version, asset)
+        download_urls = get_release_download_urls(official_url, expected_sha256)
+        if not download_release_archive(download_urls, archive_path, expected_sha256):
+            raise RuntimeError("FastFetch 预编译包下载失败")
 
         print(f"解压: {archive_path}")
         shutil.unpack_archive(archive_path, work_dir)
