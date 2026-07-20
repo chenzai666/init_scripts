@@ -757,8 +757,10 @@ echo -e "当前用户下次登录时即可生效\e[0m\n"
 
 install_fastfetch(){
 # ===================== 配置项（可根据你的 GitHub 仓库修改） =====================
-# GitHub 上 Python 脚本的原始文件地址
-PY_SCRIPT_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/refs/heads/main/install_fastfetch.py"
+# GitHub 上 Python 脚本的原始文件地址。更新 install_fastfetch.py 时，必须同步更新 SHA-256。
+PY_SCRIPT_ORIGIN_URL="https://raw.githubusercontent.com/chenzai666/init_scripts/bafb8082f8a40055a9d939a63663079878685d44/install_fastfetch.py"
+PY_SCRIPT_SHA256="d6c58eef1e15bb6aa3b3315e42509d93573837147911d1564e59a38abefbe9ef"
+GITHUB_PROXY="${FASTFETCH_GITHUB_PROXY:-https://gh-proxy.com}"
 # 超时时间（秒）
 TIMEOUT=30
 # ==============================================================================
@@ -783,12 +785,51 @@ error() {
     exit 1
 }
 
-# 检查网络连通性
-check_network() {
-    info "检查网络连通性..."
-    if ! curl -s --connect-timeout 5 github.com > /dev/null; then
-        error "无法连接到 GitHub，请检查网络或代理设置"
+prepare_python_script_urls() {
+    PY_SCRIPT_URLS=()
+
+    if [ -n "$GITHUB_PROXY" ]; then
+        case "$GITHUB_PROXY" in
+            https://*)
+                PY_SCRIPT_URLS+=("${GITHUB_PROXY%/}/$PY_SCRIPT_ORIGIN_URL")
+                ;;
+            *)
+                warn "FASTFETCH_GITHUB_PROXY 必须是 HTTPS 地址，跳过代理下载"
+                ;;
+        esac
     fi
+
+    PY_SCRIPT_URLS+=("$PY_SCRIPT_ORIGIN_URL")
+}
+
+calculate_file_sha256() {
+    python3 - "$1" <<'PY'
+import hashlib
+import sys
+
+digest = hashlib.sha256()
+with open(sys.argv[1], "rb") as file:
+    for chunk in iter(lambda: file.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+}
+
+download_python_script() {
+    local url="$1"
+    local destination="$2"
+
+    if command -v curl &> /dev/null; then
+        curl -fsSL --connect-timeout 10 --max-time "$TIMEOUT" --retry 2 "$url" -o "$destination"
+    else
+        wget -q --timeout="$TIMEOUT" --tries=3 -O "$destination" "$url"
+    fi
+}
+
+# 检查下载配置；实际连通性和完整性在下载时验证。
+check_network() {
+    prepare_python_script_urls
+    info "FastFetch 安装脚本将优先从代理下载，失败后回退官方 GitHub"
 }
 
 # 检查前置依赖（root 权限、python3、curl/wget）
@@ -838,20 +879,34 @@ check_dependencies() {
 
 # 从 GitHub 拉取并执行 Python 脚本
 run_python_script() {
-    info "开始从 GitHub 拉取安装脚本: $PY_SCRIPT_URL"
-    
-    # 优先使用 curl，没有则用 wget
-    if command -v curl &> /dev/null; then
-        # 使用 curl 拉取并通过管道执行（添加超时、静默模式、失败重试）
-        if ! curl -sSL --max-time "$TIMEOUT" --retry 3 "$PY_SCRIPT_URL" | python3 -; then
-            error "Python 脚本执行失败，请检查 GitHub 地址是否正确，或网络是否稳定"
+    local script_file
+    local url
+    local actual_sha256
+
+    script_file="$(mktemp)"
+    for url in "${PY_SCRIPT_URLS[@]}"; do
+        info "下载 FastFetch 安装脚本: $url"
+        if download_python_script "$url" "$script_file"; then
+            actual_sha256="$(calculate_file_sha256 "$script_file")"
+            if [ "$actual_sha256" = "$PY_SCRIPT_SHA256" ]; then
+                info "安装脚本 SHA-256 校验通过"
+                if python3 "$script_file"; then
+                    rm -f "$script_file"
+                    return 0
+                fi
+                rm -f "$script_file"
+                error "Python 安装脚本执行失败"
+            fi
+
+            warn "下载内容 SHA-256 不匹配，拒绝执行该文件"
+        else
+            warn "下载失败，将尝试下一个地址"
         fi
-    else
-        # 使用 wget 拉取并通过管道执行
-        if ! wget -qO- --timeout="$TIMEOUT" --tries=3 "$PY_SCRIPT_URL" | python3 -; then
-            error "Python 脚本执行失败，请检查 GitHub 地址是否正确，或网络是否稳定"
-        fi
-    fi
+
+        rm -f "$script_file"
+    done
+
+    error "FastFetch 安装脚本下载或校验失败，请检查网络或代理设置"
 }
 
 # 主函数
